@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Teste de Câmera</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eee; display: flex; flex-direction: column; align-items: center; padding: 2rem; }
+    h1 { color: #00d4ff; }
+    #status { padding: 1rem; margin: 1rem 0; border-radius: 8px; font-size: 1.1rem; min-width: 400px; text-align: center; }
+    .ok { background: #0a3d0a; border: 1px solid #2ecc71; }
+    .err { background: #3d0a0a; border: 1px solid #e74c3c; }
+    .warn { background: #3d3d0a; border: 1px solid #f1c40f; }
+    video { border: 2px solid #00d4ff; border-radius: 12px; max-width: 640px; width: 100%; background: #000; }
+    button { padding: 0.8rem 2rem; font-size: 1rem; border: none; border-radius: 8px; cursor: pointer; margin: 0.5rem; }
+    .btn-start { background: #00d4ff; color: #000; font-weight: bold; }
+    .btn-stop { background: #e74c3c; color: #fff; }
+    #devices { margin: 1rem 0; }
+    select { padding: 0.5rem; font-size: 1rem; border-radius: 6px; min-width: 300px; }
+    #log { background: #111; padding: 1rem; border-radius: 8px; max-width: 640px; width: 100%; max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.85rem; margin-top: 1rem; }
+    .log-line { margin: 2px 0; }
+    .log-ok { color: #2ecc71; }
+    .log-err { color: #e74c3c; }
+    .log-info { color: #00d4ff; }
+  </style>
+</head>
+<body>
+  <h1>🎥 Teste de Câmera</h1>
+  
+  <div id="status" class="warn">Clique em "Iniciar Câmera" para testar</div>
+
+  <div id="devices">
+    <label>Câmera: </label>
+    <select id="cameraSelect"><option value="">Carregando...</option></select>
+  </div>
+
+  <video id="video" autoplay playsinline muted></video>
+
+  <div>
+    <button class="btn-start" onclick="startCamera()">▶ Iniciar Câmera</button>
+    <button class="btn-stop" onclick="stopCamera()">⏹ Parar</button>
+  </div>
+
+  <div id="log"></div>
+
+  <script>
+    const video = document.getElementById('video');
+    const status = document.getElementById('status');
+    const cameraSelect = document.getElementById('cameraSelect');
+    const logEl = document.getElementById('log');
+    let currentStream = null;
+
+    function log(msg, type = 'info') {
+      const line = document.createElement('div');
+      line.className = `log-line log-${type}`;
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logEl.prepend(line);
+    }
+
+    function setStatus(msg, type) {
+      status.textContent = msg;
+      status.className = type;
+    }
+
+    // List available cameras
+    async function listDevices() {
+      try {
+        // Need to request permission first to see device labels
+        const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        tempStream.getTracks().forEach(t => t.stop());
+
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(d => d.kind === 'videoinput');
+        
+        cameraSelect.innerHTML = '';
+        if (videoDevices.length === 0) {
+          cameraSelect.innerHTML = '<option value="">Nenhuma câmera encontrada</option>';
+          log('Nenhuma câmera detectada no sistema!', 'err');
+          return;
+        }
+
+        videoDevices.forEach((d, i) => {
+          const opt = document.createElement('option');
+          opt.value = d.deviceId;
+          opt.textContent = d.label || `Câmera ${i + 1}`;
+          cameraSelect.appendChild(opt);
+        });
+
+        log(`${videoDevices.length} câmera(s) encontrada(s)`, 'ok');
+        videoDevices.forEach((d, i) => log(`  → ${d.label || `Câmera ${i+1}`} (${d.deviceId.slice(0,8)}...)`, 'info'));
+      } catch (err) {
+        log(`Erro ao listar câmeras: ${err.message}`, 'err');
+        cameraSelect.innerHTML = '<option value="">Erro ao detectar</option>';
+      }
+    }
+
+    async function startCamera() {
+      stopCamera();
+      
+      const deviceId = cameraSelect.value;
+      const constraints = {
+        video: deviceId 
+          ? { deviceId: { exact: deviceId } } 
+          : { facingMode: 'user' }
+      };
+
+      log(`Tentando abrir câmera... (${deviceId ? 'device: ' + deviceId.slice(0,8) : 'default'})`, 'info');
+      setStatus('Abrindo câmera...', 'warn');
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        currentStream = stream;
+        video.srcObject = stream;
+
+        const track = stream.getVideoTracks()[0];
+        const settings = track.getSettings();
+        
+        log(`✅ Câmera aberta com sucesso!`, 'ok');
+        log(`  Resolução: ${settings.width}x${settings.height}`, 'info');
+        log(`  FPS: ${settings.frameRate}`, 'info');
+        log(`  Device: ${track.label}`, 'info');
+
+        video.onloadedmetadata = () => {
+          log(`Video metadata carregado: ${video.videoWidth}x${video.videoHeight}`, 'ok');
+          if (video.videoWidth === 0 || video.videoHeight === 0) {
+            setStatus('⚠️ Câmera aberta mas sem frames (resolução 0x0)', 'err');
+            log('PROBLEMA: Câmera retorna frames vazios. Verifique se o app do celular está ativo.', 'err');
+          } else {
+            setStatus(`✅ Câmera funcionando! (${video.videoWidth}x${video.videoHeight})`, 'ok');
+          }
+        };
+
+        // Check after 3 seconds if video is actually playing
+        setTimeout(() => {
+          if (video.videoWidth === 0) {
+            setStatus('⚠️ Câmera conectada mas sem imagem. O app do celular está transmitindo?', 'err');
+            log('Após 3s, videoWidth ainda é 0. A câmera virtual pode não estar transmitindo.', 'err');
+          }
+        }, 3000);
+
+      } catch (err) {
+        log(`❌ Erro: ${err.name} — ${err.message}`, 'err');
+        
+        if (err.name === 'NotAllowedError') {
+          setStatus('❌ Permissão negada. Permita o acesso à câmera no navegador.', 'err');
+        } else if (err.name === 'NotFoundError') {
+          setStatus('❌ Câmera não encontrada. Verifique se o app do celular está conectado.', 'err');
+        } else if (err.name === 'NotReadableError') {
+          setStatus('❌ Câmera em uso por outro programa. Feche outros apps que usam câmera.', 'err');
+        } else {
+          setStatus(`❌ Erro: ${err.message}`, 'err');
+        }
+      }
+    }
+
+    function stopCamera() {
+      if (currentStream) {
+        currentStream.getTracks().forEach(t => t.stop());
+        currentStream = null;
+        video.srcObject = null;
+        log('Câmera parada.', 'info');
+      }
+    }
+
+    // Init
+    listDevices();
+  </script>
+</body>
+</html>

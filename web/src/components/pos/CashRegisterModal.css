@@ -1,0 +1,81 @@
+.cashreg-modal {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-xl);
+  width: 400px;
+  max-width: 95vw;
+}
+
+.cashreg-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-lg);
+}
+
+.cashreg-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.cashreg-title h2 {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+}
+
+.cashreg-open,
+.cashreg-close {
+  text-align: center;
+}
+
+.cashreg-icon-container {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: var(--color-primary-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto var(--space-md);
+  color: var(--color-primary);
+}
+
+.cashreg-open h3 {
+  font-size: var(--font-size-lg);
+  margin-bottom: var(--space-xs);
+}
+
+.cashreg-open p {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--space-lg);
+}
+
+.cashreg-field {
+  text-align: left;
+  margin-bottom: var(--space-lg);
+}
+
+.cashreg-field label {
+  display: block;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-xs);
+}
+
+.cashreg-input {
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+  text-align: center;
+}
+
+.cashreg-action-btn {
+  width: 100%;
+}
+
+.cashreg-status {
+  margin-bottom: var(--space-xl);
+}

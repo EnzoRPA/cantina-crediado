@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Teste de Câmeras</title>
+  <style>
+    body { font-family: Arial; background: #111; color: #eee; padding: 20px; }
+    .camera-card { border: 1px solid #333; border-radius: 8px; padding: 15px; margin: 10px 0; }
+    .success { border-color: #0f0; background: #0f01; }
+    .fail { border-color: #f00; background: #f001; }
+    .testing { border-color: #ff0; background: #ff01; }
+    video { width: 320px; height: 240px; background: #000; display: block; margin-top: 10px; }
+    h1 { color: #0f0; }
+    #status { font-size: 18px; margin: 20px 0; }
+    button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #0a0; color: white; border: none; border-radius: 5px; margin: 5px; }
+    button:hover { background: #0c0; }
+  </style>
+</head>
+<body>
+  <h1>🎥 Diagnóstico de Câmeras</h1>
+  <p>Esta página testa todas as câmeras do seu computador.</p>
+  <button onclick="runTest()">▶ Iniciar Teste</button>
+  <button onclick="testGeneric()">▶ Testar video:true</button>
+  <div id="status"></div>
+  <div id="results"></div>
+
+  <script>
+    const results = document.getElementById('results');
+    const status = document.getElementById('status');
+
+    async function runTest() {
+      results.innerHTML = '';
+      status.textContent = '🔍 Enumerando dispositivos...';
+
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cameras = devices.filter(d => d.kind === 'videoinput');
+
+      status.textContent = `Encontradas ${cameras.length} câmera(s). Testando cada uma...`;
+
+      for (let i = 0; i < cameras.length; i++) {
+        const cam = cameras[i];
+        const card = document.createElement('div');
+        card.className = 'camera-card testing';
+        card.innerHTML = `<b>Câmera ${i + 1}:</b> ${cam.label || '(sem nome)'}<br>ID: ${cam.deviceId.substring(0, 16)}...<br><span class="result">⏳ Testando (timeout: 8s)...</span>`;
+        results.appendChild(card);
+
+        try {
+          const stream = await Promise.race([
+            navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: cam.deviceId } } }),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout após 8s')), 8000))
+          ]);
+
+          // Success!
+          card.className = 'camera-card success';
+          card.querySelector('.result').textContent = '✅ FUNCIONA!';
+          
+          const video = document.createElement('video');
+          video.autoplay = true;
+          video.muted = true;
+          video.srcObject = stream;
+          card.appendChild(video);
+
+          // Stop after 3 seconds preview
+          setTimeout(() => {
+            stream.getTracks().forEach(t => t.stop());
+            video.srcObject = null;
+            video.remove();
+            card.querySelector('.result').textContent += ' (preview encerrado)';
+          }, 5000);
+
+        } catch (err) {
+          card.className = 'camera-card fail';
+          card.querySelector('.result').textContent = `❌ FALHOU: ${err.message}`;
+        }
+
+        // Small delay between tests
+        await new Promise(r => setTimeout(r, 500));
+      }
+
+      status.textContent = '✅ Teste concluído!';
+    }
+
+    async function testGeneric() {
+      results.innerHTML = '';
+      status.textContent = '🔍 Testando getUserMedia({ video: true })...';
+
+      const card = document.createElement('div');
+      card.className = 'camera-card testing';
+      card.innerHTML = '<b>Teste genérico:</b> { video: true }<br><span class="result">⏳ Testando (timeout: 8s)...</span>';
+      results.appendChild(card);
+
+      try {
+        const stream = await Promise.race([
+          navigator.mediaDevices.getUserMedia({ video: true }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout após 8s')), 8000))
+        ]);
+
+        card.className = 'camera-card success';
+        card.querySelector('.result').textContent = `✅ FUNCIONA! Track: ${stream.getVideoTracks()[0].label}`;
+        
+        const video = document.createElement('video');
+        video.autoplay = true;
+        video.muted = true;
+        video.srcObject = stream;
+        card.appendChild(video);
+
+        setTimeout(() => {
+          stream.getTracks().forEach(t => t.stop());
+          video.srcObject = null;
+          video.remove();
+        }, 5000);
+
+      } catch (err) {
+        card.className = 'camera-card fail';
+        card.querySelector('.result').textContent = `❌ FALHOU: ${err.message}`;
+      }
+
+      status.textContent = '✅ Teste concluído!';
+    }
+  </script>
+</body>
+</html>

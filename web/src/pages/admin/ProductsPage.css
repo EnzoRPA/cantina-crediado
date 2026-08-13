@@ -1,0 +1,339 @@
+/* ---- Shared Page Styles ---- */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: var(--space-lg);
+}
+
+.page-header h1 {
+  font-size: var(--font-size-2xl);
+  font-weight: 800;
+  margin-bottom: var(--space-xs);
+}
+
+.page-header p {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.page-toolbar {
+  display: flex;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+.page-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 0 var(--space-md);
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  flex: 1;
+  max-width: 400px;
+}
+
+.page-search input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--color-text-primary);
+  padding: 10px 0;
+  font-size: var(--font-size-sm);
+  outline: none;
+}
+
+.page-search input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.page-loading {
+  text-align: center;
+  padding: var(--space-2xl);
+  color: var(--color-text-muted);
+}
+
+/* ---- Data Table ---- */
+.products-table-wrap {
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  min-width: 800px;
+  border-collapse: collapse;
+  background: var(--gradient-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.data-table thead {
+  background: var(--color-bg-elevated);
+}
+
+.data-table th {
+  padding: var(--space-md) var(--space-md);
+  text-align: left;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.data-table td {
+  padding: var(--space-sm) var(--space-md);
+  font-size: var(--font-size-sm);
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.data-table tbody tr {
+  transition: background var(--transition-fast);
+}
+
+.data-table tbody tr:hover {
+  background: var(--color-bg-hover);
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ---- Product Cell ---- */
+.prod-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.prod-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.prod-name {
+  display: block;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.prod-barcode {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.td-price {
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.td-muted {
+  color: var(--color-text-muted);
+}
+
+.margin-badge {
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.margin-badge.high { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+.margin-badge.mid { background: rgba(234, 179, 8, 0.15); color: #facc15; }
+.margin-badge.low { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+
+.stock-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.stock-warn { color: var(--color-warning); }
+.stock-val { font-weight: 600; }
+.stock-ok { color: var(--color-text-primary); }
+.stock-low { color: var(--color-warning); }
+.stock-out { color: var(--color-danger); }
+
+.td-actions {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+/* ---- Product Image ---- */
+.prod-img-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-elevated);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.prod-img-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.form-image-upload {
+  margin-bottom: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.form-image-upload label {
+  align-self: flex-start;
+  margin-bottom: var(--space-xs);
+}
+
+.image-upload-box {
+  width: 120px;
+  height: 120px;
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transition: all var(--transition-fast);
+  background: var(--color-bg-elevated);
+}
+
+.image-upload-box:hover {
+  border-color: var(--color-primary);
+  background: var(--color-bg-hover);
+}
+
+.image-upload-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.upload-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--color-text-muted);
+}
+
+.upload-placeholder span {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-md);
+  }
+  
+  .page-header .btn {
+    width: 100%;
+  }
+
+  .page-toolbar {
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+
+  .page-search {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  /* Transform table into card layout */
+  .products-table-wrap {
+    overflow-x: visible;
+  }
+  
+  .data-table {
+    border: none;
+    background: transparent;
+    min-width: unset;
+  }
+
+  .data-table thead {
+    display: none; /* Hide desktop table headers */
+  }
+
+  .data-table tbody {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+
+  .data-table tr {
+    display: flex;
+    flex-direction: column;
+    background: var(--gradient-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-md);
+    gap: var(--space-xs);
+  }
+
+  .data-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-xs) 0;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.06);
+    text-align: right;
+  }
+
+  .data-table td:last-child {
+    border-bottom: none;
+    padding-top: var(--space-sm);
+    justify-content: flex-end;
+  }
+
+  /* Injected labels using nth-child */
+  .data-table td::before {
+    content: "";
+    font-weight: 600;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+    text-transform: uppercase;
+    text-align: left;
+  }
+
+  .data-table td:nth-child(1)::before { content: 'Produto'; }
+  .data-table td:nth-child(2)::before { content: 'Preço Venda'; }
+  .data-table td:nth-child(3)::before { content: 'Preço Custo'; }
+  .data-table td:nth-child(4)::before { content: 'Margem'; }
+  .data-table td:nth-child(5)::before { content: 'Estoque'; }
+  .data-table td:nth-child(6)::before { content: 'Status'; }
+
+  /* Cell alignments */
+  .prod-cell {
+    justify-content: flex-end;
+    text-align: right;
+  }
+
+  .stock-cell {
+    justify-content: flex-end;
+  }
+}
+

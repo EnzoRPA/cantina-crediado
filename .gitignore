@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+build/
+.next/
+
+# Environment
+.env
+.env.local
+.env.production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Testing
+coverage/
+
+# Docker
+docker-compose.override.yml
+
+# Expo
+app/.expo/
+
+# Misc
+*.tgz
+.turbo
+
+# Uploads
+backend/uploads/
+
+# SQLite Database
+*.sqlite3
+*.sqlite3-journal
