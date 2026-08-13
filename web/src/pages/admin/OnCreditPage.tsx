@@ -99,10 +99,12 @@ export default function OnCreditPage() {
   // Quick Add Student Modal State (Print 3 FAB)
   const [isNewStudentModalOpen, setIsNewStudentModalOpen] = useState(false);
   const [newStudentData, setNewStudentData] = useState({
+    type: 'student' as 'student' | 'employee',
     name: '',
     enrollmentNumber: '',
     grade: '',
     class_group: '',
+    jobRole: '',
     guardianName: '',
     guardianPhone: '',
   });
@@ -638,19 +640,37 @@ export default function OnCreditPage() {
 
     setSavingNewStudent(true);
     try {
+      const isEmployee = newStudentData.type === 'employee';
+      const gradeVal = isEmployee
+        ? (newStudentData.jobRole.trim() || 'Funcionário')
+        : (newStudentData.grade.trim() || 'Geral');
+      const classGroupVal = isEmployee
+        ? (newStudentData.jobRole.trim() || 'Funcionário')
+        : (newStudentData.class_group.trim() || 'A');
+
       await studentsApi.create({
-        type: 'student',
+        type: isEmployee ? 'employee' : 'student',
         name: newStudentData.name.trim(),
-        enrollmentNumber: newStudentData.enrollmentNumber.trim() || `MAT-${Date.now().toString().slice(-4)}`,
-        grade: newStudentData.grade.trim() || 'Geral',
-        class_group: newStudentData.class_group.trim() || 'A',
-        guardianName: newStudentData.guardianName.trim() || undefined,
+        enrollmentNumber: newStudentData.enrollmentNumber.trim() || `${isEmployee ? 'FUNC' : 'MAT'}-${Date.now().toString().slice(-4)}`,
+        grade: gradeVal,
+        classGroup: classGroupVal,
+        class_group: classGroupVal,
+        guardianName: isEmployee ? undefined : (newStudentData.guardianName.trim() || undefined),
         guardianPhone: newStudentData.guardianPhone.trim() || undefined,
       });
 
-      showToast('Cliente cadastrado com sucesso!', 'success');
+      showToast(isEmployee ? 'Funcionário cadastrado com sucesso!' : 'Cliente cadastrado com sucesso!', 'success');
       setIsNewStudentModalOpen(false);
-      setNewStudentData({ name: '', enrollmentNumber: '', grade: '', class_group: '', guardianName: '', guardianPhone: '' });
+      setNewStudentData({
+        type: 'student',
+        name: '',
+        enrollmentNumber: '',
+        grade: '',
+        class_group: '',
+        jobRole: '',
+        guardianName: '',
+        guardianPhone: '',
+      });
       loadDebts();
     } catch (err: any) {
       console.error('Erro ao cadastrar cliente:', err);
@@ -1490,80 +1510,130 @@ export default function OnCreditPage() {
         </div>
       )}
 
-      {/* QUICK ADD STUDENT MODAL (Print 3 FAB) */}
+      {/* QUICK ADD STUDENT / EMPLOYEE MODAL (Print 3 FAB) */}
       {isNewStudentModalOpen && (
         <div className="modal-overlay animate-fadeIn">
           <div className="modal-content" style={{ maxWidth: '420px' }}>
             <div className="modal-header">
-              <h3>Adicionar Novo Cliente / Aluno</h3>
+              <h3>{newStudentData.type === 'employee' ? 'Adicionar Novo Funcionário' : 'Adicionar Novo Cliente / Aluno'}</h3>
               <button className="btn btn-ghost btn-sm" onClick={() => setIsNewStudentModalOpen(false)}>
                 <X size={18} />
               </button>
             </div>
+
+            {/* Type Selector (Aluno vs Funcionário) */}
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', background: 'var(--bg-input, #f1f5f9)', padding: '4px', borderRadius: '8px' }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${newStudentData.type === 'student' ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ flex: 1, borderRadius: '6px', fontSize: '13px' }}
+                onClick={() => setNewStudentData({ ...newStudentData, type: 'student' })}
+              >
+                👤 Aluno / Cliente
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${newStudentData.type === 'employee' ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ flex: 1, borderRadius: '6px', fontSize: '13px' }}
+                onClick={() => setNewStudentData({ ...newStudentData, type: 'employee' })}
+              >
+                💼 Funcionário
+              </button>
+            </div>
+
             <form onSubmit={handleSaveQuickStudent}>
               <div className="form-group" style={{ marginBottom: '0.75rem' }}>
-                <label>Nome do Aluno / Cliente *</label>
+                <label>{newStudentData.type === 'employee' ? 'Nome do Funcionário *' : 'Nome do Aluno / Cliente *'}</label>
                 <input
                   type="text"
                   className="input"
                   required
-                  placeholder="Ex: João Silva"
+                  placeholder={newStudentData.type === 'employee' ? 'Ex: Maria Oliveira' : 'Ex: João Silva'}
                   value={newStudentData.name}
                   onChange={(e) => setNewStudentData({ ...newStudentData, name: e.target.value })}
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                <div className="form-group">
-                  <label>Série / Ano</label>
-                  <input
-                    type="text"
-                    className="input"
-                    placeholder="Ex: 5º Ano"
-                    value={newStudentData.grade}
-                    onChange={(e) => setNewStudentData({ ...newStudentData, grade: e.target.value })}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Turma</label>
-                  <input
-                    type="text"
-                    className="input"
-                    placeholder="Ex: A"
-                    value={newStudentData.class_group}
-                    onChange={(e) => setNewStudentData({ ...newStudentData, class_group: e.target.value })}
-                  />
-                </div>
-              </div>
+              {newStudentData.type === 'student' ? (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                    <div className="form-group">
+                      <label>Série / Ano</label>
+                      <input
+                        type="text"
+                        className="input"
+                        placeholder="Ex: 5º Ano"
+                        value={newStudentData.grade}
+                        onChange={(e) => setNewStudentData({ ...newStudentData, grade: e.target.value })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Turma</label>
+                      <input
+                        type="text"
+                        className="input"
+                        placeholder="Ex: A"
+                        value={newStudentData.class_group}
+                        onChange={(e) => setNewStudentData({ ...newStudentData, class_group: e.target.value })}
+                      />
+                    </div>
+                  </div>
 
-              <div className="form-group" style={{ marginBottom: '0.75rem' }}>
-                <label>Nome do Responsável (Pai/Mãe)</label>
-                <input
-                  type="text"
-                  className="input"
-                  placeholder="Ex: Carlos Silva"
-                  value={newStudentData.guardianName}
-                  onChange={(e) => setNewStudentData({ ...newStudentData, guardianName: e.target.value })}
-                />
-              </div>
+                  <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+                    <label>Nome do Responsável (Pai/Mãe)</label>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="Ex: Carlos Silva"
+                      value={newStudentData.guardianName}
+                      onChange={(e) => setNewStudentData({ ...newStudentData, guardianName: e.target.value })}
+                    />
+                  </div>
 
-              <div className="form-group" style={{ marginBottom: '1rem' }}>
-                <label>WhatsApp do Responsável</label>
-                <input
-                  type="text"
-                  className="input"
-                  placeholder="Ex: (11) 99999-9999"
-                  value={newStudentData.guardianPhone}
-                  onChange={(e) => setNewStudentData({ ...newStudentData, guardianPhone: e.target.value })}
-                />
-              </div>
+                  <div className="form-group" style={{ marginBottom: '1rem' }}>
+                    <label>WhatsApp do Responsável</label>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="Ex: (11) 99999-9999"
+                      value={newStudentData.guardianPhone}
+                      onChange={(e) => setNewStudentData({ ...newStudentData, guardianPhone: e.target.value })}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+                    <label>Função / Cargo (Setor / Departamento) *</label>
+                    <input
+                      type="text"
+                      className="input"
+                      required
+                      placeholder="Ex: Professor(a), Cozinha, Secretaria, Direção, TI"
+                      value={newStudentData.jobRole}
+                      onChange={(e) => setNewStudentData({ ...newStudentData, jobRole: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: '1rem' }}>
+                    <label>WhatsApp do Funcionário</label>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="Ex: (11) 99999-9999"
+                      value={newStudentData.guardianPhone}
+                      onChange={(e) => setNewStudentData({ ...newStudentData, guardianPhone: e.target.value })}
+                    />
+                  </div>
+                </>
+              )}
 
               <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setIsNewStudentModalOpen(false)}>
                   Cancelar
                 </button>
                 <button type="submit" className="btn btn-success" disabled={savingNewStudent}>
-                  {savingNewStudent ? 'Salvando...' : 'Salvar Cliente'}
+                  {savingNewStudent ? 'Salvando...' : newStudentData.type === 'employee' ? 'Salvar Funcionário' : 'Salvar Cliente'}
                 </button>
               </div>
             </form>
