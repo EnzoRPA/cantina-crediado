@@ -4,7 +4,7 @@ const path = require('path');
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 
-const usePostgres = process.env.DB_CLIENT === 'pg';
+const usePostgres = process.env.DB_CLIENT === 'pg' || !!process.env.DATABASE_URL;
 
 const migrationsDir = usePostgres
   ? path.resolve(__dirname, './src/shared/database/migrations')
