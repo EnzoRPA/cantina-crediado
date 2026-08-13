@@ -9,6 +9,17 @@ import { v4 as uuidv4 } from 'uuid';
 export async function seed(knex: Knex): Promise<void> {
   const isPg = knex.client.config.client === 'pg';
 
+  // Safety check: Don't wipe if production database already has data
+  try {
+    const existingUsers = await knex('users').select('id').limit(1);
+    if (existingUsers.length > 0 && process.env.NODE_ENV === 'production') {
+      console.log('ℹ️ Production database already has data. Skipping demo seed wipe.');
+      return;
+    }
+  } catch (_) {
+    // If table doesn't exist yet, proceed with migration/seed
+  }
+
   // Clean all tables in correct order (respecting foreign keys)
   const tables = [
     'refresh_tokens', 'whatsapp_logs', 'daily_limits',
