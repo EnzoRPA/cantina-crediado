@@ -280,10 +280,10 @@ export default function OnCreditPage() {
     }
   };
 
-  const handleConfirmCameraBatch = async (items: Array<{ studentId: string; amount: number }>) => {
+  const handleConfirmCameraBatch = async (items: Array<{ studentId: string; amount: number }>, date?: string) => {
     try {
       const { data } = await posApi.createBatchManualOnCredit({
-        date: new Date().toISOString().split('T')[0],
+        date: date || new Date().toISOString().split('T')[0],
         description: 'Consumo diário via Folha QR Code (Câmera)',
         items,
       });
@@ -562,8 +562,12 @@ export default function OnCreditPage() {
       setManualStudentSearch('');
       setManualAmount('');
       setManualDescription('');
-      loadDebts();
-      handleSelectStudent(targetStudent);
+
+      // Refresh debts & student details asynchronously in parallel
+      Promise.all([
+        loadDebts(),
+        handleSelectStudent(targetStudent)
+      ]).catch(console.error);
     } catch (err: any) {
       console.error('Erro ao lançar venda a prazo:', err);
       showToast(err.response?.data?.error?.message || 'Erro ao lançar venda a prazo.', 'error');

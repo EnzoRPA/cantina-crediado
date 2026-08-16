@@ -23,7 +23,7 @@ interface CameraQRScannerModalProps {
   isOpen: boolean;
   onClose: () => void;
   allStudents: StudentItem[];
-  onConfirmBatch: (items: Array<{ studentId: string; amount: number }>) => Promise<void>;
+  onConfirmBatch: (items: Array<{ studentId: string; amount: number }>, date?: string) => Promise<void>;
 }
 
 // Audio beep synthesizer using Web Audio API
@@ -65,6 +65,8 @@ function parseMathExpression(expr: string): number {
 const formatCurrency = (val: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
+const getTodayStr = () => new Date().toISOString().split('T')[0];
+
 export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
   isOpen,
   onClose,
@@ -76,6 +78,7 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
   const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
   const [scannedItems, setScannedItems] = useState<ScannedBatchItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [launchDate, setLaunchDate] = useState<string>(getTodayStr());
 
   // Manual Add Student Dropdown State
   const [manualSearch, setManualSearch] = useState('');
@@ -256,7 +259,7 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
 
     setSubmitting(true);
     try {
-      await onConfirmBatch(payloadItems);
+      await onConfirmBatch(payloadItems, launchDate);
       onClose();
     } catch (err) {
       console.error('Error submitting scanned batch:', err);
@@ -414,18 +417,53 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
 
             {/* Quick Stats & Manual Add Card */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', justifyContent: 'space-between' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
-                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '1rem', borderRadius: '12px' }}>
-                  <span style={{ fontSize: '0.8rem', color: '#166534', fontWeight: 600 }}>Alunos Escaneados</span>
-                  <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#15803d', marginTop: '4px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.3fr', gap: '0.65rem' }}>
+                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '0.75rem', borderRadius: '12px' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#166534', fontWeight: 600 }}>Alunos Escaneados</span>
+                  <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#15803d', marginTop: '2px' }}>
                     {scannedItems.length}
                   </div>
                 </div>
 
-                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '1rem', borderRadius: '12px' }}>
-                  <span style={{ fontSize: '0.8rem', color: '#1e40af', fontWeight: 600 }}>Total da Folha</span>
-                  <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#1d4ed8', marginTop: '4px' }}>
+                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '0.75rem', borderRadius: '12px' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#1e40af', fontWeight: 600 }}>Total Folha</span>
+                  <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#1d4ed8', marginTop: '2px' }}>
                     {formatCurrency(grandTotalBatch)}
+                  </div>
+                </div>
+
+                <div style={{ background: 'var(--bg-card, #ffffff)', border: '1px solid var(--border-color, #cbd5e1)', padding: '0.65rem', borderRadius: '12px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--text-main, #334155)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '3px' }}>
+                    📅 Data do Lançamento
+                  </label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    value={launchDate}
+                    onChange={(e) => setLaunchDate(e.target.value)}
+                    style={{ fontWeight: 800, fontSize: '0.85rem', padding: '3px 6px', width: '100%', cursor: 'pointer' }}
+                  />
+                  <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      onClick={() => setLaunchDate(getTodayStr())}
+                      style={{ padding: '1px 6px', fontSize: '0.7rem', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '4px', fontWeight: 600, background: launchDate === getTodayStr() ? '#dbeafe' : 'transparent' }}
+                    >
+                      Hoje
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      onClick={() => {
+                        const y = new Date();
+                        y.setDate(y.getDate() - 1);
+                        setLaunchDate(y.toISOString().split('T')[0]);
+                      }}
+                      style={{ padding: '1px 6px', fontSize: '0.7rem', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '4px', fontWeight: 600 }}
+                    >
+                      Ontem
+                    </button>
                   </div>
                 </div>
               </div>

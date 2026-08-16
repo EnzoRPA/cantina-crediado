@@ -845,27 +845,24 @@ export class PosService {
 
     const mappedDebts = [...mappedPending, ...mappedCredit].sort((a, b) => a.student_name.localeCompare(b.student_name));
 
-    const totalSoldRes = await db('transaction_payments as tp')
-      .join('transactions as t', 'tp.transaction_id', 't.id')
-      .where({ 't.school_id': schoolId, 'tp.payment_method': 'on_credit' })
-      .sum('tp.amount as total')
-      .first();
-
-    // total_received = sum of all "Recebimento de Pagamento" receipt transactions
-    // These are created with payment_method pix/cash and notes starting with "Recebimento"
-    const totalReceivedRes = await db('transactions as t')
-      .where({ 't.school_id': schoolId, 't.status': 'completed' })
-      .whereRaw("t.notes ILIKE 'Recebimento de Pagamento%'")
-      .sum('t.final_amount as total')
-      .first();
-
-    const todayStr = new Date().toISOString().split('T')[0];
-    const todaySalesRes = await db('transaction_payments as tp')
-      .join('transactions as t', 'tp.transaction_id', 't.id')
-      .where({ 't.school_id': schoolId, 'tp.payment_method': 'on_credit' })
-      .whereRaw("DATE(t.created_at) = ?", [todayStr])
-      .sum('tp.amount as total')
-      .first();
+    const [totalSoldRes, totalReceivedRes, todaySalesRes] = await Promise.all([
+      db('transaction_payments as tp')
+        .join('transactions as t', 'tp.transaction_id', 't.id')
+        .where({ 't.school_id': schoolId, 'tp.payment_method': 'on_credit' })
+        .sum('tp.amount as total')
+        .first(),
+      db('transactions as t')
+        .where({ 't.school_id': schoolId, 't.status': 'completed' })
+        .whereRaw("t.notes ILIKE 'Recebimento de Pagamento%'")
+        .sum('t.final_amount as total')
+        .first(),
+      db('transaction_payments as tp')
+        .join('transactions as t', 'tp.transaction_id', 't.id')
+        .where({ 't.school_id': schoolId, 'tp.payment_method': 'on_credit' })
+        .whereRaw("DATE(t.created_at) = ?", [todayStr])
+        .sum('tp.amount as total')
+        .first(),
+    ]);
 
     const totalPending = mappedPending.reduce((sum, d) => sum + d.total_debt, 0);
 
@@ -918,16 +915,38 @@ export class PosService {
 
     logger.info({ txCount: transactions.length, idsArray }, '[getStudentOnCreditDetails] transactions found');
 
+    const txIds = transactions.map(t => t.id);
+
+    const [allPayments, allItems] = await Promise.all([
+      txIds.length > 0
+        ? db('transaction_payments')
+            .whereIn('transaction_id', txIds)
+            .select('transaction_id', 'payment_method', 'amount', 'status')
+        : Promise.resolve([]),
+      txIds.length > 0
+        ? db('transaction_items')
+            .whereIn('transaction_id', txIds)
+            .select('transaction_id', 'product_name', 'quantity', 'unit_price', 'total_price')
+        : Promise.resolve([]),
+    ]);
+
+    const paymentsByTxMap = new Map<string, any[]>();
+    for (const p of allPayments) {
+      if (!paymentsByTxMap.has(p.transaction_id)) paymentsByTxMap.set(p.transaction_id, []);
+      paymentsByTxMap.get(p.transaction_id)!.push(p);
+    }
+
+    const itemsByTxMap = new Map<string, any[]>();
+    for (const item of allItems) {
+      if (!itemsByTxMap.has(item.transaction_id)) itemsByTxMap.set(item.transaction_id, []);
+      itemsByTxMap.get(item.transaction_id)!.push(item);
+    }
+
     const result = [];
 
     for (const tx of transactions) {
-      const payments = await db('transaction_payments')
-        .where({ transaction_id: tx.id })
-        .select('payment_method', 'amount', 'status');
-
-      const items = await db('transaction_items')
-        .where({ transaction_id: tx.id })
-        .select('product_name', 'quantity', 'unit_price', 'total_price');
+      const payments = paymentsByTxMap.get(tx.id) || [];
+      const items = itemsByTxMap.get(tx.id) || [];
 
       const mainPayment = payments[0] || {};
       const onCreditPayment = payments.find(p => p.payment_method === 'on_credit');
@@ -1039,26 +1058,36 @@ export class PosService {
     return db.transaction(async (trx) => {
       const txCreatedAt = input.date ? new Date(input.date + 'T12:00:00') : new Date();
       const description = input.description?.trim() || 'Lançamento Manual (Ficha a Prazo)';
+      
+      const studentIds = input.items.map(i => i.studentId);
+      const students = await trx('students as s')
+        .join('users as u', 's.user_id', 'u.id')
+        .whereIn('s.id', studentIds)
+        .where('s.school_id', schoolId)
+        .select('s.id', 'u.name');
+
+      const studentMap = new Map<string, string>();
+      for (const s of students) {
+        studentMap.set(s.id, s.name);
+      }
+
+      const txInserts: any[] = [];
+      const paymentInserts: any[] = [];
+      const itemInserts: any[] = [];
       let count = 0;
 
       for (const item of input.items) {
-        const student = await trx('students as s')
-          .join('users as u', 's.user_id', 'u.id')
-          .where({ 's.id': item.studentId, 's.school_id': schoolId })
-          .select('s.id', 'u.name')
-          .first();
-
-        if (!student) continue;
+        if (!studentMap.has(item.studentId)) continue;
 
         const txId = uuidv4();
         const paymentId = uuidv4();
         const itemId = uuidv4();
 
-        await trx('transactions').insert({
+        txInserts.push({
           id: txId,
           school_id: schoolId,
           operator_id: operatorId,
-          student_id: student.id,
+          student_id: item.studentId,
           total_amount: item.amount,
           discount_amount: 0,
           final_amount: item.amount,
@@ -1068,7 +1097,7 @@ export class PosService {
           updated_at: txCreatedAt,
         });
 
-        await trx('transaction_payments').insert({
+        paymentInserts.push({
           id: paymentId,
           transaction_id: txId,
           payment_method: 'on_credit',
@@ -1077,7 +1106,7 @@ export class PosService {
           created_at: txCreatedAt,
         });
 
-        await trx('transaction_items').insert({
+        itemInserts.push({
           id: itemId,
           transaction_id: txId,
           product_id: null,
@@ -1089,6 +1118,12 @@ export class PosService {
         });
 
         count++;
+      }
+
+      if (txInserts.length > 0) {
+        await trx('transactions').insert(txInserts);
+        await trx('transaction_payments').insert(paymentInserts);
+        await trx('transaction_items').insert(itemInserts);
       }
 
       logger.info({ count, schoolId, operatorId }, 'Batch manual on-credit created');
