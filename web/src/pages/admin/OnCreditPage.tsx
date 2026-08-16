@@ -847,7 +847,7 @@ export default function OnCreditPage() {
                     cursor: 'pointer'
                   }}
                 >
-                  <Camera size={18} /> 📷 Escanear Câmera / Folha
+                  <Camera size={18} /> 📷 Escanear Câmera (Com Data 📅)
                 </button>
 
                 <button

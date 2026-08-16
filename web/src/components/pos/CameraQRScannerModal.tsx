@@ -336,7 +336,7 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
         >
           <div>
             <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>
-              📷 Escanear Folha / Lançar Consumo via Câmera
+              📷 Escanear Folha / Lançar Consumo via Câmera (Com Data 📅)
             </h3>
             <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
               Aponte a câmera para os QR Codes da folha impressa para identificar e registrar consumos instantaneamente.
