@@ -62,6 +62,15 @@ function parseMathExpression(expr: string): number {
   return Math.max(0, Math.round(total * 100) / 100);
 }
 
+function normalizeText(str: string): string {
+  return (str || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[º°]/g, '')
+    .trim();
+}
+
 const formatCurrency = (val: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
@@ -182,8 +191,8 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
     const targetStudent = allStudents.find(
       (s) =>
         s.student_id === extractedId ||
-        s.enrollment_number === extractedId ||
-        s.student_name.toLowerCase() === extractedId.toLowerCase()
+        (s.enrollment_number && s.enrollment_number.toLowerCase() === extractedId.toLowerCase()) ||
+        normalizeText(s.student_name) === normalizeText(extractedId)
     );
 
     if (!targetStudent) {
@@ -298,13 +307,15 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
   const filteredStudentsForManualAdd = allStudents
     .filter((s) => {
       if (!manualSearch.trim()) return false;
-      const term = manualSearch.toLowerCase().trim();
-      return (
-        s.student_name.toLowerCase().includes(term) ||
-        (s.enrollment_number && s.enrollment_number.toLowerCase().includes(term))
+      const term = normalizeText(manualSearch);
+      const searchableText = normalizeText(
+        `${s.student_name} ${s.grade || ''} ${s.class_group || ''} ${s.enrollment_number || ''}`
       );
+      if (searchableText.includes(term)) return true;
+      const tokens = term.split(/\s+/).filter(Boolean);
+      return tokens.every((token) => searchableText.includes(token));
     })
-    .slice(0, 5);
+    .slice(0, 50);
 
   if (!isOpen) return null;
 
@@ -501,7 +512,8 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
                       borderRadius: '8px',
                       marginTop: '0.4rem',
                       boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                      overflow: 'hidden',
+                      maxHeight: '240px',
+                      overflowY: 'auto',
                     }}
                   >
                     {filteredStudentsForManualAdd.map((s) => (
