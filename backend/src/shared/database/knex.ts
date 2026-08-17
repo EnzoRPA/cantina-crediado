@@ -11,6 +11,16 @@ import { logger } from '../utils/logger';
 const dbClient = process.env.DB_CLIENT || (process.env.DATABASE_URL ? 'pg' : 'better-sqlite3');
 const usePostgres = dbClient === 'pg';
 
+const isProd = !!(process.env.DATABASE_URL || process.env.NODE_ENV === 'production');
+const migrationExt = isProd ? 'js' : 'ts';
+// In production the .ts files are compiled to dist/shared/database/migrations/*.js
+const migrationsDirPg = isProd
+  ? path.join(__dirname, '..', '..', '..', 'dist', 'shared', 'database', 'migrations')
+  : path.join(__dirname, 'migrations');
+const migrationsDirSqlite = isProd
+  ? path.join(__dirname, '..', '..', '..', 'dist', 'shared', 'database', 'migrations-sqlite')
+  : path.join(__dirname, 'migrations-sqlite');
+
 const knexConfig: Knex.Config = usePostgres
   ? {
       client: 'pg',
@@ -30,8 +40,8 @@ const knexConfig: Knex.Config = usePostgres
         }
       },
       migrations: {
-        directory: __dirname + '/migrations',
-        extension: 'ts',
+        directory: migrationsDirPg,
+        extension: migrationExt,
         tableName: 'knex_migrations',
       },
       seeds: {
@@ -55,8 +65,8 @@ const knexConfig: Knex.Config = usePostgres
         }
       },
       migrations: {
-        directory: __dirname + '/migrations-sqlite',
-        extension: 'ts',
+        directory: migrationsDirSqlite,
+        extension: migrationExt,
         tableName: 'knex_migrations',
       },
       seeds: {

@@ -1698,13 +1698,17 @@ export default function OnCreditPage() {
                       className={`btn btn-sm ${selectedStudent.billing_type === 'pix_direto' ? 'btn-primary' : 'btn-outline'}`}
                       style={{ flex: 1, fontSize: '0.8rem', justifyContent: 'center' }}
                       onClick={async () => {
+                        const prev_bt = selectedStudent.billing_type;
+                        // Optimistic update
+                        setSelectedStudent(prev => prev ? ({ ...prev, billing_type: 'pix_direto' }) : null);
+                        setDebts(prev => prev.map(d => d.student_id === selectedStudent.student_id ? { ...d, billing_type: 'pix_direto' } : d));
                         try {
-                          await studentsApi.update(selectedStudent.student_id, { billingType: 'pix_direto', billing_type: 'pix_direto' });
-                          setSelectedStudent(prev => prev ? ({ ...prev, billing_type: 'pix_direto' }) : null);
-                          setDebts(prev => prev.map(d => d.student_id === selectedStudent.student_id ? { ...d, billing_type: 'pix_direto' } : d));
+                          await studentsApi.update(selectedStudent.student_id, { billingType: 'pix_direto' });
                           showToast('Perfil alterado para Pix Direto!', 'success');
-                          loadDebts();
                         } catch (err) {
+                          // Rollback
+                          setSelectedStudent(prev => prev ? ({ ...prev, billing_type: prev_bt }) : null);
+                          setDebts(prev => prev.map(d => d.student_id === selectedStudent.student_id ? { ...d, billing_type: prev_bt } : d));
                           showToast('Erro ao atualizar perfil', 'error');
                         }
                       }}
@@ -1716,13 +1720,17 @@ export default function OnCreditPage() {
                       className={`btn btn-sm ${selectedStudent.billing_type === 'crediario' ? 'btn-primary' : 'btn-outline'}`}
                       style={{ flex: 1, fontSize: '0.8rem', justifyContent: 'center' }}
                       onClick={async () => {
+                        const prev_bt = selectedStudent.billing_type;
+                        // Optimistic update
+                        setSelectedStudent(prev => prev ? ({ ...prev, billing_type: 'crediario' }) : null);
+                        setDebts(prev => prev.map(d => d.student_id === selectedStudent.student_id ? { ...d, billing_type: 'crediario' } : d));
                         try {
-                          await studentsApi.update(selectedStudent.student_id, { billingType: 'crediario', billing_type: 'crediario' });
-                          setSelectedStudent(prev => prev ? ({ ...prev, billing_type: 'crediario' }) : null);
-                          setDebts(prev => prev.map(d => d.student_id === selectedStudent.student_id ? { ...d, billing_type: 'crediario' } : d));
+                          await studentsApi.update(selectedStudent.student_id, { billingType: 'crediario' });
                           showToast('Perfil alterado para Crediário!', 'success');
-                          loadDebts();
                         } catch (err) {
+                          // Rollback
+                          setSelectedStudent(prev => prev ? ({ ...prev, billing_type: prev_bt }) : null);
+                          setDebts(prev => prev.map(d => d.student_id === selectedStudent.student_id ? { ...d, billing_type: prev_bt } : d));
                           showToast('Erro ao atualizar perfil', 'error');
                         }
                       }}
