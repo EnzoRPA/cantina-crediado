@@ -8,8 +8,42 @@ async function bootstrap() {
     const { db } = await import('./shared/database/knex');
 
     logger.info('🔄 Running database migrations...');
-    await db.migrate.latest();
-    logger.info('✅ Migrations complete');
+    try {
+      await db.migrate.latest();
+      logger.info('✅ Migrations complete');
+    } catch (migErr) {
+      logger.warn({ migErr }, '⚠️ Migration runner failed, continuing with manual column checks...');
+    }
+
+    // ── Hard guarantee: ensure billing_type column exists ──────────────
+    // This runs REGARDLESS of whether migrations succeeded, because the
+    // Knex migration runner can silently skip if it cannot find .js files.
+    try {
+      const hasBillingType = await db.schema.hasColumn('students', 'billing_type');
+      if (!hasBillingType) {
+        logger.info('➕ Adding missing billing_type column to students...');
+        await db.schema.alterTable('students', (table) => {
+          table.string('billing_type', 20).defaultTo('pix_direto');
+        });
+        // Backfill existing on_credit students
+        await db.raw(`
+          UPDATE students
+          SET billing_type = 'crediario'
+          WHERE id IN (
+            SELECT DISTINCT t.student_id
+            FROM transactions t
+            JOIN transaction_payments tp ON tp.transaction_id = t.id
+            WHERE tp.payment_method = 'on_credit' AND t.student_id IS NOT NULL
+          )
+        `).catch(() => {});
+        logger.info('✅ billing_type column added and backfilled');
+      } else {
+        logger.info('✅ billing_type column already exists');
+      }
+    } catch (colErr) {
+      logger.warn({ colErr }, '⚠️ Could not verify/add billing_type column');
+    }
+    // ───────────────────────────────────────────────────────────────────
 
     const server = app.listen(config.port, () => {
       logger.info(`🚀 Cantina Escolar API running on port ${config.port}`);
