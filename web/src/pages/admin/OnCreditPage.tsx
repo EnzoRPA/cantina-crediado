@@ -708,9 +708,10 @@ export default function OnCreditPage() {
     if (e) e.stopPropagation();
     setEditingStudentId(student.student_id);
     const isEmp = (student.grade || '').toLowerCase().includes('func');
+    const isCred = student.billing_type === 'crediario' || (student.total_debt || 0) > 0;
     setEditStudentData({
       type: isEmp ? 'employee' : 'student',
-      billingType: student.billing_type || 'crediario',
+      billingType: isCred ? 'crediario' : 'pix_direto',
       name: student.student_name || '',
       enrollmentNumber: student.enrollment_number || '',
       grade: student.grade || '',
@@ -727,7 +728,7 @@ export default function OnCreditPage() {
         const s = data.data.student;
         setEditStudentData({
           type: (s.type as 'student' | 'employee') || 'student',
-          billingType: (s.billing_type as 'pix_direto' | 'crediario') || 'crediario',
+          billingType: (s.billing_type as 'pix_direto' | 'crediario') || (isCred ? 'crediario' : 'pix_direto'),
           name: s.name || '',
           enrollmentNumber: s.enrollment_number || '',
           grade: s.grade || '',
@@ -1256,7 +1257,7 @@ export default function OnCreditPage() {
                       <div className="debt-card-info">
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                           <span className="debt-student-name" style={{ color: '#0f172a', fontWeight: 700 }}>{d.student_name}</span>
-                          {d.billing_type === 'crediario' ? (
+                          {d.billing_type === 'crediario' || (d.total_debt || 0) > 0 ? (
                             <span style={{ fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>📋 Crediário</span>
                           ) : (
                             <span style={{ fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}>⚡ Pix Direto</span>
@@ -1384,7 +1385,7 @@ export default function OnCreditPage() {
                 <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: '#0f172a' }}>
                   {selectedStudent.student_name}
                 </h2>
-                {selectedStudent.billing_type === 'crediario' ? (
+                {selectedStudent.billing_type === 'crediario' || (selectedStudent.total_debt || 0) > 0 ? (
                   <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '12px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>📋 Crediário</span>
                 ) : (
                   <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '12px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}>⚡ Pix Direto</span>
@@ -1683,7 +1684,7 @@ export default function OnCreditPage() {
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <button
                       type="button"
-                      className={`btn btn-sm ${(selectedStudent.billing_type || 'crediario') === 'pix_direto' ? 'btn-primary' : 'btn-outline'}`}
+                      className={`btn btn-sm ${selectedStudent.billing_type === 'pix_direto' && (selectedStudent.total_debt || 0) === 0 ? 'btn-primary' : 'btn-outline'}`}
                       style={{ flex: 1, fontSize: '0.8rem', justifyContent: 'center' }}
                       onClick={async () => {
                         try {
@@ -1700,7 +1701,7 @@ export default function OnCreditPage() {
                     </button>
                     <button
                       type="button"
-                      className={`btn btn-sm ${(selectedStudent.billing_type || 'crediario') === 'crediario' ? 'btn-primary' : 'btn-outline'}`}
+                      className={`btn btn-sm ${selectedStudent.billing_type === 'crediario' || (selectedStudent.total_debt || 0) > 0 ? 'btn-primary' : 'btn-outline'}`}
                       style={{ flex: 1, fontSize: '0.8rem', justifyContent: 'center' }}
                       onClick={async () => {
                         try {
