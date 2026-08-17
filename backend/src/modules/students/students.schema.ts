@@ -17,62 +17,90 @@ export const listStudentsSchema = z.object({
 
 // ---- Mutation schemas ----
 
-export const createStudentSchema = z.object({
-  email: z.string().email('Email inválido').optional().or(z.literal('')),
-  password: z
-    .string()
-    .min(8, 'Senha deve ter no mínimo 8 caracteres')
-    .regex(/[A-Z]/, 'Senha deve conter ao menos uma letra maiúscula')
-    .regex(/[0-9]/, 'Senha deve conter ao menos um número')
-    .optional()
-    .or(z.literal('')),
-  name: z.string().max(255).optional().or(z.literal('')),
-  enrollmentNumber: z.string().max(50).optional().or(z.literal('')),
-  type: z.enum(['student', 'employee']).default('student'),
-  billingType: z.enum(['pix_direto', 'crediario']).optional(),
-  billing_type: z.enum(['pix_direto', 'crediario']).optional(),
-  grade: z.string().max(255).optional(),
-  classGroup: z.string().max(255).optional(),
-  phone: z.string().optional(),
-  birthDate: z.string().optional(), // ISO date string
-  photoUrl: z.string().url().optional().or(z.literal('')),
-  cpf: z.string().optional(),
-  gender: z.string().optional(),
-  addressFull: z.string().optional(),
-  guardianName: z.string().optional(),
-  guardianCpf: z.string().optional(),
-  guardianRg: z.string().optional(),
-  guardianPhone: z.string().optional(),
-});
+export const createStudentSchema = z.preprocess(
+  (data: any) => {
+    if (data && typeof data === 'object') {
+      // Normalize billing_type -> billingType
+      if (data.billing_type !== undefined && data.billingType === undefined) {
+        data.billingType = data.billing_type;
+      }
+      // Normalize class_group -> classGroup
+      if (data.class_group !== undefined && data.classGroup === undefined) {
+        data.classGroup = data.class_group;
+      }
+    }
+    return data;
+  },
+  z.object({
+    email: z.string().email('Email inválido').optional().or(z.literal('')),
+    password: z
+      .string()
+      .min(8, 'Senha deve ter no mínimo 8 caracteres')
+      .regex(/[A-Z]/, 'Senha deve conter ao menos uma letra maiúscula')
+      .regex(/[0-9]/, 'Senha deve conter ao menos um número')
+      .optional()
+      .or(z.literal('')),
+    name: z.string().max(255).optional().or(z.literal('')),
+    enrollmentNumber: z.string().max(50).optional().or(z.literal('')),
+    type: z.enum(['student', 'employee']).default('student'),
+    billingType: z.enum(['pix_direto', 'crediario']).optional(),
+    grade: z.string().max(255).optional(),
+    classGroup: z.string().max(255).optional(),
+    phone: z.string().optional(),
+    birthDate: z.string().optional(),
+    photoUrl: z.string().url().optional().or(z.literal('')),
+    cpf: z.string().optional(),
+    gender: z.string().optional(),
+    addressFull: z.string().optional(),
+    guardianName: z.string().optional(),
+    guardianCpf: z.string().optional(),
+    guardianRg: z.string().optional(),
+    guardianPhone: z.string().optional(),
+  })
+);
 
-export const updateStudentSchema = z.object({
-  name: z.string().min(2).max(255).optional(),
-  email: z.string().email('Email inválido').optional().or(z.literal('')),
-  password: z
-    .string()
-    .min(8, 'Senha deve ter no mínimo 8 caracteres')
-    .regex(/[A-Z]/, 'Senha deve conter ao menos uma letra maiúscula')
-    .regex(/[0-9]/, 'Senha deve conter ao menos um número')
-    .optional()
-    .or(z.literal('')),
-  enrollmentNumber: z.string().max(50).optional().or(z.literal('')),
-  type: z.enum(['student', 'employee']).optional(),
-  billingType: z.enum(['pix_direto', 'crediario']).optional(),
-  billing_type: z.enum(['pix_direto', 'crediario']).optional(),
-  grade: z.string().max(255).optional(),
-  classGroup: z.string().max(255).optional(),
-  phone: z.string().optional(),
-  birthDate: z.string().optional(),
-  photoUrl: z.string().url().optional().or(z.literal('')),
-  isActive: z.boolean().optional(),
-  cpf: z.string().optional(),
-  gender: z.string().optional(),
-  addressFull: z.string().optional(),
-  guardianName: z.string().optional(),
-  guardianCpf: z.string().optional(),
-  guardianRg: z.string().optional(),
-  guardianPhone: z.string().optional(),
-});
+export const updateStudentSchema = z.preprocess(
+  (data: any) => {
+    if (data && typeof data === 'object') {
+      // Normalize billing_type -> billingType
+      if (data.billing_type !== undefined && data.billingType === undefined) {
+        data.billingType = data.billing_type;
+      }
+      // Normalize class_group -> classGroup
+      if (data.class_group !== undefined && data.classGroup === undefined) {
+        data.classGroup = data.class_group;
+      }
+    }
+    return data;
+  },
+  z.object({
+    name: z.string().min(2).max(255).optional(),
+    email: z.string().email('Email inválido').optional().or(z.literal('')),
+    password: z
+      .string()
+      .min(8, 'Senha deve ter no mínimo 8 caracteres')
+      .regex(/[A-Z]/, 'Senha deve conter ao menos uma letra maiúscula')
+      .regex(/[0-9]/, 'Senha deve conter ao menos um número')
+      .optional()
+      .or(z.literal('')),
+    enrollmentNumber: z.string().max(50).optional().or(z.literal('')),
+    type: z.enum(['student', 'employee']).optional(),
+    billingType: z.enum(['pix_direto', 'crediario']).optional(),
+    grade: z.string().max(255).optional(),
+    classGroup: z.string().max(255).optional(),
+    phone: z.string().optional(),
+    birthDate: z.string().optional(),
+    photoUrl: z.string().url().optional().or(z.literal('')),
+    isActive: z.boolean().optional(),
+    cpf: z.string().optional(),
+    gender: z.string().optional(),
+    addressFull: z.string().optional(),
+    guardianName: z.string().optional(),
+    guardianCpf: z.string().optional(),
+    guardianRg: z.string().optional(),
+    guardianPhone: z.string().optional(),
+  })
+);
 
 export const adjustBalanceSchema = z.object({
   amount: z.number().min(0.01, 'Valor deve ser maior que zero'),

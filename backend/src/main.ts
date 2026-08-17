@@ -4,8 +4,12 @@ import { logger } from './shared/utils/logger';
 
 async function bootstrap() {
   try {
-    // Import database to trigger connection test
-    await import('./shared/database/knex');
+    // Import database and run pending migrations automatically
+    const { db } = await import('./shared/database/knex');
+
+    logger.info('🔄 Running database migrations...');
+    await db.migrate.latest();
+    logger.info('✅ Migrations complete');
 
     const server = app.listen(config.port, () => {
       logger.info(`🚀 Cantina Escolar API running on port ${config.port}`);
