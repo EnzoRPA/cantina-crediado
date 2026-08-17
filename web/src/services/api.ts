@@ -150,6 +150,12 @@ export const cardsApi = {
 export const studentsApi = {
   create: (data: any) =>
     api.post('/students', data),
+  update: (id: string, data: any) =>
+    api.put(`/students/${id}`, data),
+  delete: (id: string) =>
+    api.delete(`/students/${id}`),
+  getById: (id: string) =>
+    api.get(`/students/${id}`),
   search: (query: string) =>
     api.get('/students', { params: { search: query, limit: 10 } }),
   list: (params?: any) =>

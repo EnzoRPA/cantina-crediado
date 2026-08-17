@@ -43,6 +43,16 @@ export class StudentsController {
     }
   }
 
+  /** DELETE /api/students/:id */
+  async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await studentsService.delete(req.user!.schoolId, req.params.id);
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** GET /api/students/:id/balance */
   async getBalance(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {

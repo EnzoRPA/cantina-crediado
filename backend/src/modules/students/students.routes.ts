@@ -61,6 +61,13 @@ router.put(
   studentsController.update.bind(studentsController)
 );
 
+router.delete(
+  '/:id',
+  roleGuard('admin', 'manager'),
+  validateParams(studentIdParamSchema),
+  studentsController.delete.bind(studentsController)
+);
+
 router.put(
   '/:id/marketing',
   roleGuard('admin', 'manager'),

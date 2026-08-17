@@ -10,6 +10,7 @@ export const listStudentsSchema = z.object({
   search: z.string().optional(),
   grade: z.string().optional(),
   type: z.enum(['student', 'employee', 'all']).optional(),
+  billingType: z.enum(['pix_direto', 'crediario', 'all']).optional(),
   isActive: z.coerce.boolean().optional(),
   lowBalance: z.coerce.boolean().optional(), // filter students with balance < 10
 });
@@ -28,6 +29,7 @@ export const createStudentSchema = z.object({
   name: z.string().max(255).optional().or(z.literal('')),
   enrollmentNumber: z.string().max(50).optional().or(z.literal('')),
   type: z.enum(['student', 'employee']).default('student'),
+  billingType: z.enum(['pix_direto', 'crediario']).default('pix_direto').optional(),
   grade: z.string().max(255).optional(),
   classGroup: z.string().max(255).optional(),
   phone: z.string().optional(),
@@ -54,6 +56,7 @@ export const updateStudentSchema = z.object({
     .or(z.literal('')),
   enrollmentNumber: z.string().max(50).optional().or(z.literal('')),
   type: z.enum(['student', 'employee']).optional(),
+  billingType: z.enum(['pix_direto', 'crediario']).optional(),
   grade: z.string().max(255).optional(),
   classGroup: z.string().max(255).optional(),
   phone: z.string().optional(),

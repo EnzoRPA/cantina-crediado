@@ -446,6 +446,13 @@ export class PosService {
             });
         }
 
+        // Automatic rule: If on_credit payment method, ensure student's billing_type is set to 'crediario'
+        if (payment.paymentMethod === 'on_credit' && input.studentId) {
+          await trx('students')
+            .where({ id: input.studentId, school_id: schoolId })
+            .update({ billing_type: 'crediario' });
+        }
+
         // Record cash register movement
         await trx('cash_register_movements').insert({
           id: uuidv4(),
@@ -796,11 +803,12 @@ export class PosService {
         's.grade',
         's.class_group',
         's.enrollment_number',
-        's.balance'
+        's.balance',
+        's.billing_type'
       )
       .sum('tp.amount as total_debt')
       .max('t.created_at as last_purchase_at')
-      .groupBy('s.id', 'u.name', 's.grade', 's.class_group', 's.enrollment_number', 's.balance')
+      .groupBy('s.id', 'u.name', 's.grade', 's.class_group', 's.enrollment_number', 's.balance', 's.billing_type')
       .orderBy('student_name', 'asc');
 
     // 2. Fetch ALL other active students registered in the school (so every student appears in search)
@@ -817,7 +825,8 @@ export class PosService {
         's.grade',
         's.class_group',
         's.enrollment_number',
-        's.balance'
+        's.balance',
+        's.billing_type'
       )
       .orderBy('u.name', 'asc');
 
@@ -829,6 +838,7 @@ export class PosService {
       enrollment_number: d.enrollment_number || '',
       total_debt: Number(d.total_debt || 0),
       balance: Number(d.balance || 0),
+      billing_type: d.billing_type || 'crediario',
       last_purchase_at: d.last_purchase_at || ''
     }));
 
@@ -840,10 +850,13 @@ export class PosService {
       enrollment_number: s.enrollment_number || '',
       total_debt: 0,
       balance: Number(s.balance || 0),
+      billing_type: s.billing_type || 'pix_direto',
       last_purchase_at: ''
     }));
 
     const mappedDebts = [...mappedPending, ...mappedCredit].sort((a, b) => a.student_name.localeCompare(b.student_name));
+
+    const todayStr = new Date().toISOString().split('T')[0];
 
     const [totalSoldRes, totalReceivedRes, todaySalesRes] = await Promise.all([
       db('transaction_payments as tp')
@@ -1124,6 +1137,12 @@ export class PosService {
         await trx('transactions').insert(txInserts);
         await trx('transaction_payments').insert(paymentInserts);
         await trx('transaction_items').insert(itemInserts);
+
+        // Automatic rule: ensure all students in the batch are marked as crediario
+        await trx('students')
+          .whereIn('id', studentIds)
+          .where('school_id', schoolId)
+          .update({ billing_type: 'crediario' });
       }
 
       logger.info({ count, schoolId, operatorId }, 'Batch manual on-credit created');
@@ -1441,6 +1460,11 @@ export class PosService {
         total_price: input.amount,
         created_at: txCreatedAt,
       });
+
+      // Automatic rule: ensure student's billing_type is set to 'crediario'
+      await trx('students')
+        .where({ id: student.id, school_id: schoolId })
+        .update({ billing_type: 'crediario' });
 
       logger.info({ studentId: student.id, amount: input.amount, description }, 'Manual on-credit debt created');
 

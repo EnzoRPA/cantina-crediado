@@ -14,6 +14,7 @@ interface Student {
   class_group: string;
   balance: number;
   type?: 'student' | 'employee';
+  billing_type?: 'pix_direto' | 'crediario';
   is_active: boolean;
   user_id: string;
   cpf?: string;
@@ -55,6 +56,7 @@ export default function StudentsPage() {
 
   const [formData, setFormData] = useState({
     type: 'student' as 'student' | 'employee',
+    billingType: 'pix_direto' as 'pix_direto' | 'crediario',
     name: '',
     email: '',
     password: '',
@@ -265,6 +267,7 @@ export default function StudentsPage() {
     setEditingId(null);
     setFormData({ 
       type: 'student',
+      billingType: 'pix_direto',
       name: '', email: '', password: '', enrollmentNumber: '', grade: '', class_group: '',
       cpf: '', phone: '', birthDate: '', addressFull: '',
       guardianName: '', guardianCpf: '', guardianRg: '', guardianPhone: ''
@@ -276,6 +279,7 @@ export default function StudentsPage() {
     setEditingId(s.id);
     setFormData({
       type: s.type || 'student',
+      billingType: s.billing_type || 'pix_direto',
       name: s.name || '',
       email: s.email || '',
       password: '', // Leave empty for edit
@@ -359,6 +363,7 @@ export default function StudentsPage() {
         // Include email, and password if provided
         const payload: any = {
           type: formData.type,
+          billingType: formData.billingType,
           name: formData.name,
           email: formData.email,
           enrollmentNumber: formData.enrollmentNumber,
@@ -380,6 +385,7 @@ export default function StudentsPage() {
       } else {
         await api.post('/students', {
           type: formData.type,
+          billingType: formData.billingType,
           name: formData.name,
           email: formData.email,
           password: formData.password || 'Mudar123', // Minimum 8 chars, 1 uppercase, 1 number
@@ -531,7 +537,7 @@ export default function StudentsPage() {
                   <UsersIcon size={20} />
                 </div>
                 <div className="student-info">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                     <span className="student-name" title={s.name || `Cliente ${s.enrollment_number}`}>
                       {s.name || `Cliente ${s.enrollment_number}`}
                     </span>
@@ -539,6 +545,11 @@ export default function StudentsPage() {
                       <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: '10px', background: '#ede9fe', color: '#6d28d9', fontWeight: 600 }}>Funcionário</span>
                     ) : (
                       <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: '10px', background: '#dbeafe', color: '#1e40af', fontWeight: 600 }}>Aluno</span>
+                    )}
+                    {s.billing_type === 'crediario' ? (
+                      <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: '10px', background: '#dcfce7', color: '#15803d', fontWeight: 600 }}>📋 Crediário</span>
+                    ) : (
+                      <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: '10px', background: '#e0f2fe', color: '#0369a1', fontWeight: 600 }}>⚡ Pix Direto</span>
                     )}
                   </div>
                   <span className="student-meta">
@@ -606,7 +617,7 @@ export default function StudentsPage() {
               <div className="modal-body">
                 <div className="form-group" style={{ background: '#f8fafc', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '1rem' }}>
                   <label style={{ fontWeight: 600, display: 'block', marginBottom: '0.25rem' }}>Tipo de Cliente *</label>
-                  <div style={{ display: 'flex', gap: '1.5rem' }}>
+                  <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '0.65rem' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontWeight: formData.type === 'student' ? 'bold' : 'normal' }}>
                       <input type="radio" name="type" value="student" checked={formData.type === 'student'} onChange={() => setFormData({ ...formData, type: 'student' })} />
                       <span>Aluno</span>
@@ -614,6 +625,20 @@ export default function StudentsPage() {
                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontWeight: formData.type === 'employee' ? 'bold' : 'normal' }}>
                       <input type="radio" name="type" value="employee" checked={formData.type === 'employee'} onChange={() => setFormData({ ...formData, type: 'employee' })} />
                       <span>Funcionário (Professor, Secretaria, Direção, etc.)</span>
+                    </label>
+                  </div>
+
+                  <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: '0.5rem 0' }} />
+
+                  <label style={{ fontWeight: 600, display: 'block', marginBottom: '0.25rem', marginTop: '0.4rem' }}>Perfil de Cobrança / Pagamento *</label>
+                  <div style={{ display: 'flex', gap: '1.5rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontWeight: formData.billingType === 'pix_direto' ? 'bold' : 'normal' }}>
+                      <input type="radio" name="billingType" value="pix_direto" checked={formData.billingType === 'pix_direto'} onChange={() => setFormData({ ...formData, billingType: 'pix_direto' })} />
+                      <span style={{ color: '#0369a1' }}>⚡ Pix Direto (Pré-pago / Recarga)</span>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontWeight: formData.billingType === 'crediario' ? 'bold' : 'normal' }}>
+                      <input type="radio" name="billingType" value="crediario" checked={formData.billingType === 'crediario'} onChange={() => setFormData({ ...formData, billingType: 'crediario' })} />
+                      <span style={{ color: '#15803d' }}>📋 Crediário (A Prazo / Fiado)</span>
                     </label>
                   </div>
                 </div>

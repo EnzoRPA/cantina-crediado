@@ -18,6 +18,7 @@ interface DebtStudent {
   total_debt: number;
   last_purchase_at: string;
   balance?: number;
+  billing_type?: 'pix_direto' | 'crediario';
 }
 
 interface DebtDetailItem {
@@ -100,6 +101,7 @@ export default function OnCreditPage() {
   const [isNewStudentModalOpen, setIsNewStudentModalOpen] = useState(false);
   const [newStudentData, setNewStudentData] = useState({
     type: 'student' as 'student' | 'employee',
+    billingType: 'crediario' as 'pix_direto' | 'crediario',
     name: '',
     enrollmentNumber: '',
     grade: '',
@@ -109,6 +111,22 @@ export default function OnCreditPage() {
     guardianPhone: '',
   });
   const [savingNewStudent, setSavingNewStudent] = useState(false);
+
+  // Edit Student State (CRUD)
+  const [isEditStudentModalOpen, setIsEditStudentModalOpen] = useState(false);
+  const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
+  const [editStudentData, setEditStudentData] = useState({
+    type: 'student' as 'student' | 'employee',
+    billingType: 'crediario' as 'pix_direto' | 'crediario',
+    name: '',
+    enrollmentNumber: '',
+    grade: '',
+    class_group: '',
+    jobRole: '',
+    guardianName: '',
+    guardianPhone: '',
+  });
+  const [savingEditStudent, setSavingEditStudent] = useState(false);
 
   // Manual Debt Launch State
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
@@ -654,6 +672,7 @@ export default function OnCreditPage() {
 
       await studentsApi.create({
         type: isEmployee ? 'employee' : 'student',
+        billingType: newStudentData.billingType || 'crediario',
         name: newStudentData.name.trim(),
         enrollmentNumber: newStudentData.enrollmentNumber.trim() || `${isEmployee ? 'FUNC' : 'MAT'}-${Date.now().toString().slice(-4)}`,
         grade: gradeVal,
@@ -667,6 +686,7 @@ export default function OnCreditPage() {
       setIsNewStudentModalOpen(false);
       setNewStudentData({
         type: 'student',
+        billingType: 'crediario',
         name: '',
         enrollmentNumber: '',
         grade: '',
@@ -681,6 +701,119 @@ export default function OnCreditPage() {
       showToast(err.response?.data?.error?.message || 'Erro ao cadastrar cliente.', 'error');
     } finally {
       setSavingNewStudent(false);
+    }
+  };
+
+  const openEditStudentModal = async (student: DebtStudent, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEditingStudentId(student.student_id);
+    const isEmp = (student.grade || '').toLowerCase().includes('func');
+    setEditStudentData({
+      type: isEmp ? 'employee' : 'student',
+      billingType: student.billing_type || 'crediario',
+      name: student.student_name || '',
+      enrollmentNumber: student.enrollment_number || '',
+      grade: student.grade || '',
+      class_group: student.class_group || '',
+      jobRole: student.grade || '',
+      guardianName: '',
+      guardianPhone: '',
+    });
+    setIsEditStudentModalOpen(true);
+
+    try {
+      const { data } = await studentsApi.getById(student.student_id);
+      if (data.success && data.data?.student) {
+        const s = data.data.student;
+        setEditStudentData({
+          type: (s.type as 'student' | 'employee') || 'student',
+          billingType: (s.billing_type as 'pix_direto' | 'crediario') || 'crediario',
+          name: s.name || '',
+          enrollmentNumber: s.enrollment_number || '',
+          grade: s.grade || '',
+          class_group: s.class_group || '',
+          jobRole: s.grade || '',
+          guardianName: s.guardian_name || '',
+          guardianPhone: s.guardian_phone || s.phone || '',
+        });
+      }
+    } catch (err) {
+      console.error('Erro ao carregar dados do cliente:', err);
+    }
+  };
+
+  const handleSaveEditStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingStudentId || !editStudentData.name.trim() || savingEditStudent) return;
+
+    setSavingEditStudent(true);
+    try {
+      const isEmployee = editStudentData.type === 'employee';
+      const gradeVal = isEmployee
+        ? (editStudentData.jobRole.trim() || 'Funcionário')
+        : (editStudentData.grade.trim() || 'Geral');
+      const classGroupVal = isEmployee
+        ? (editStudentData.jobRole.trim() || 'Funcionário')
+        : (editStudentData.class_group.trim() || 'A');
+
+      await studentsApi.update(editingStudentId, {
+        type: editStudentData.type,
+        billingType: editStudentData.billingType,
+        name: editStudentData.name.trim(),
+        enrollmentNumber: editStudentData.enrollmentNumber.trim() || undefined,
+        grade: gradeVal,
+        classGroup: classGroupVal,
+        class_group: classGroupVal,
+        phone: editStudentData.guardianPhone.trim() || undefined,
+        guardianName: isEmployee ? undefined : (editStudentData.guardianName.trim() || undefined),
+        guardianPhone: editStudentData.guardianPhone.trim() || undefined,
+      });
+
+      showToast('Cadastro atualizado com sucesso!', 'success');
+      setIsEditStudentModalOpen(false);
+
+      if (selectedStudent && selectedStudent.student_id === editingStudentId) {
+        setSelectedStudent({
+          ...selectedStudent,
+          student_name: editStudentData.name.trim(),
+          grade: gradeVal,
+          class_group: classGroupVal,
+          enrollment_number: editStudentData.enrollmentNumber.trim(),
+          billing_type: editStudentData.billingType,
+        });
+      }
+
+      loadDebts();
+    } catch (err: any) {
+      console.error('Erro ao atualizar cadastro:', err);
+      showToast(err.response?.data?.error?.message || 'Erro ao atualizar dados do cliente.', 'error');
+    } finally {
+      setSavingEditStudent(false);
+    }
+  };
+
+  const handleDeleteStudent = async (student: DebtStudent, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+
+    let warningMsg = `Deseja realmente remover/desativar o cliente "${student.student_name}"?`;
+    if (student.total_debt > 0) {
+      warningMsg = `⚠️ ATENÇÃO: O cliente "${student.student_name}" possui um DÉBITO PENDENTE de ${formatCurrency(student.total_debt)}!\n\nTem certeza que deseja desativar o cadastro?`;
+    }
+
+    if (!window.confirm(warningMsg)) return;
+
+    try {
+      await studentsApi.delete(student.student_id);
+      showToast(`Cliente "${student.student_name}" desativado com sucesso!`, 'success');
+
+      if (selectedStudent && selectedStudent.student_id === student.student_id) {
+        setSelectedStudent(null);
+      }
+
+      loadDebts();
+    } catch (err: any) {
+      console.error('Erro ao excluir cliente:', err);
+      showToast(err.response?.data?.error?.message || 'Erro ao desativar cliente.', 'error');
     }
   };
 
@@ -1121,12 +1254,19 @@ export default function OnCreditPage() {
                         {d.student_name.slice(0, 2).toUpperCase()}
                       </div>
                       <div className="debt-card-info">
-                        <span className="debt-student-name" style={{ color: '#0f172a', fontWeight: 700 }}>{d.student_name}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                          <span className="debt-student-name" style={{ color: '#0f172a', fontWeight: 700 }}>{d.student_name}</span>
+                          {d.billing_type === 'crediario' ? (
+                            <span style={{ fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>📋 Crediário</span>
+                          ) : (
+                            <span style={{ fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}>⚡ Pix Direto</span>
+                          )}
+                        </div>
                         <span className="debt-student-meta" style={{ color: '#64748b' }}>
                           {d.grade} {d.class_group || 'Turma'} • Matrícula {d.enrollment_number}
                         </span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         {hasCredit ? (
                           <div style={{ textAlign: 'right' }}>
                             <div className="debt-card-amount" style={{ color: '#16a34a', fontWeight: 800 }}>
@@ -1141,6 +1281,26 @@ export default function OnCreditPage() {
                             {formatCurrency(d.total_debt)}
                           </div>
                         )}
+                        <div style={{ display: 'flex', gap: '2px', marginLeft: '0.25rem' }}>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs"
+                            style={{ padding: '4px', color: '#475569' }}
+                            title="Editar cadastro do cliente"
+                            onClick={(e) => openEditStudentModal(d, e)}
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs"
+                            style={{ padding: '4px', color: '#ef4444' }}
+                            title="Excluir/Desativar cliente"
+                            onClick={(e) => handleDeleteStudent(d, e)}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
                         <ChevronRight size={18} style={{ color: '#94a3b8' }} />
                       </div>
                     </div>
@@ -1220,9 +1380,36 @@ export default function OnCreditPage() {
               >
                 <ArrowLeft size={18} /> Voltar para a Busca
               </button>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: '#0f172a' }}>
-                {selectedStudent.student_name}
-              </h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: '#0f172a' }}>
+                  {selectedStudent.student_name}
+                </h2>
+                {selectedStudent.billing_type === 'crediario' ? (
+                  <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '12px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>📋 Crediário</span>
+                ) : (
+                  <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '12px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}>⚡ Pix Direto</span>
+                )}
+                <div style={{ display: 'flex', gap: '4px', marginLeft: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-xs"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem' }}
+                    onClick={() => openEditStudentModal(selectedStudent)}
+                    title="Editar Cadastro"
+                  >
+                    <Pencil size={13} /> Editar
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-xs"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', borderColor: '#fca5a5', color: '#dc2626' }}
+                    onClick={() => handleDeleteStudent(selectedStudent)}
+                    title="Excluir/Desativar Cliente"
+                  >
+                    <Trash2 size={13} /> Excluir
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* 6 Sub-tabs Header (Prints 5-9) */}
@@ -1489,7 +1676,68 @@ export default function OnCreditPage() {
                   </div>
                 </div>
 
-                <button type="button" className="btn btn-outline" style={{ justifyContent: 'flex-start', gap: '0.5rem' }} onClick={() => handleSelectStudent(selectedStudent)}>
+                <div style={{ background: '#ffffff', padding: '1rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '0.5rem' }}>
+                    Perfil de Cobrança / Pagamento do Cliente:
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${(selectedStudent.billing_type || 'crediario') === 'pix_direto' ? 'btn-primary' : 'btn-outline'}`}
+                      style={{ flex: 1, fontSize: '0.8rem', justifyContent: 'center' }}
+                      onClick={async () => {
+                        try {
+                          await studentsApi.update(selectedStudent.student_id, { billingType: 'pix_direto' });
+                          setSelectedStudent({ ...selectedStudent, billing_type: 'pix_direto' });
+                          showToast('Perfil alterado para Pix Direto!', 'success');
+                          loadDebts();
+                        } catch (err) {
+                          showToast('Erro ao atualizar perfil', 'error');
+                        }
+                      }}
+                    >
+                      ⚡ Pix Direto (Pré-pago)
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${(selectedStudent.billing_type || 'crediario') === 'crediario' ? 'btn-primary' : 'btn-outline'}`}
+                      style={{ flex: 1, fontSize: '0.8rem', justifyContent: 'center' }}
+                      onClick={async () => {
+                        try {
+                          await studentsApi.update(selectedStudent.student_id, { billingType: 'crediario' });
+                          setSelectedStudent({ ...selectedStudent, billing_type: 'crediario' });
+                          showToast('Perfil alterado para Crediário!', 'success');
+                          loadDebts();
+                        } catch (err) {
+                          showToast('Erro ao atualizar perfil', 'error');
+                        }
+                      }}
+                    >
+                      📋 Crediário (A Prazo)
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ flex: 1, justifyContent: 'center', gap: '0.5rem' }}
+                    onClick={() => openEditStudentModal(selectedStudent)}
+                  >
+                    <Pencil size={16} /> Editar Cadastro Completo
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    style={{ flex: 1, justifyContent: 'center', gap: '0.5rem', borderColor: '#fca5a5', color: '#dc2626' }}
+                    onClick={() => handleDeleteStudent(selectedStudent)}
+                  >
+                    <Trash2 size={16} /> Desativar / Excluir Cliente
+                  </button>
+                </div>
+
+                <button type="button" className="btn btn-outline" style={{ justifyContent: 'flex-start', gap: '0.5rem', marginTop: '0.5rem' }} onClick={() => handleSelectStudent(selectedStudent)}>
                   <RefreshCw size={16} /> Recalcular vendas e pagamentos
                 </button>
               </div>
@@ -1526,7 +1774,7 @@ export default function OnCreditPage() {
             </div>
 
             {/* Type Selector (Aluno vs Funcionário) */}
-            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', background: 'var(--bg-input, #f1f5f9)', padding: '4px', borderRadius: '8px' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', background: 'var(--bg-input, #f1f5f9)', padding: '4px', borderRadius: '8px' }}>
               <button
                 type="button"
                 className={`btn btn-sm ${newStudentData.type === 'student' ? 'btn-primary' : 'btn-ghost'}`}
@@ -1543,6 +1791,29 @@ export default function OnCreditPage() {
               >
                 💼 Funcionário
               </button>
+            </div>
+
+            {/* Billing Type Selector (Pix Direto vs Crediário) */}
+            <div style={{ marginBottom: '1rem', background: 'var(--bg-input, #f8fafc)', border: '1px solid #e2e8f0', padding: '6px 8px', borderRadius: '8px' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.35rem' }}>Perfil de Cobrança / Pagamento:</label>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  className={`btn btn-xs ${newStudentData.billingType === 'pix_direto' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ flex: 1, borderRadius: '6px', fontSize: '12px', border: '1px solid #cbd5e1' }}
+                  onClick={() => setNewStudentData({ ...newStudentData, billingType: 'pix_direto' })}
+                >
+                  ⚡ Pix Direto
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-xs ${newStudentData.billingType === 'crediario' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ flex: 1, borderRadius: '6px', fontSize: '12px', border: '1px solid #cbd5e1' }}
+                  onClick={() => setNewStudentData({ ...newStudentData, billingType: 'crediario' })}
+                >
+                  📋 Crediário (A Prazo)
+                </button>
+              </div>
             </div>
 
             <form onSubmit={handleSaveQuickStudent}>
@@ -1638,6 +1909,171 @@ export default function OnCreditPage() {
                 </button>
                 <button type="submit" className="btn btn-success" disabled={savingNewStudent}>
                   {savingNewStudent ? 'Salvando...' : newStudentData.type === 'employee' ? 'Salvar Funcionário' : 'Salvar Cliente'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT STUDENT / EMPLOYEE MODAL (CRUD) */}
+      {isEditStudentModalOpen && (
+        <div className="modal-overlay animate-fadeIn">
+          <div className="modal-content" style={{ maxWidth: '440px' }}>
+            <div className="modal-header">
+              <h3>{editStudentData.type === 'employee' ? 'Editar Funcionário' : 'Editar Cliente / Aluno'}</h3>
+              <button className="btn btn-ghost btn-sm" onClick={() => setIsEditStudentModalOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Type Selector */}
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', background: 'var(--bg-input, #f1f5f9)', padding: '4px', borderRadius: '8px' }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${editStudentData.type === 'student' ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ flex: 1, borderRadius: '6px', fontSize: '13px' }}
+                onClick={() => setEditStudentData({ ...editStudentData, type: 'student' })}
+              >
+                👤 Aluno / Cliente
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${editStudentData.type === 'employee' ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ flex: 1, borderRadius: '6px', fontSize: '13px' }}
+                onClick={() => setEditStudentData({ ...editStudentData, type: 'employee' })}
+              >
+                💼 Funcionário
+              </button>
+            </div>
+
+            {/* Billing Type Selector */}
+            <div style={{ marginBottom: '1rem', background: 'var(--bg-input, #f8fafc)', border: '1px solid #e2e8f0', padding: '6px 8px', borderRadius: '8px' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.35rem' }}>Perfil de Cobrança / Pagamento:</label>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  className={`btn btn-xs ${editStudentData.billingType === 'pix_direto' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ flex: 1, borderRadius: '6px', fontSize: '12px', border: '1px solid #cbd5e1' }}
+                  onClick={() => setEditStudentData({ ...editStudentData, billingType: 'pix_direto' })}
+                >
+                  ⚡ Pix Direto
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-xs ${editStudentData.billingType === 'crediario' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ flex: 1, borderRadius: '6px', fontSize: '12px', border: '1px solid #cbd5e1' }}
+                  onClick={() => setEditStudentData({ ...editStudentData, billingType: 'crediario' })}
+                >
+                  📋 Crediário (A Prazo)
+                </button>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveEditStudent}>
+              <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+                <label>{editStudentData.type === 'employee' ? 'Nome do Funcionário *' : 'Nome do Aluno / Cliente *'}</label>
+                <input
+                  type="text"
+                  className="input"
+                  required
+                  placeholder={editStudentData.type === 'employee' ? 'Ex: Maria Oliveira' : 'Ex: João Silva'}
+                  value={editStudentData.name}
+                  onChange={(e) => setEditStudentData({ ...editStudentData, name: e.target.value })}
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+                <label>{editStudentData.type === 'employee' ? 'Matrícula / RE' : 'Matrícula'}</label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="Ex: 2024001"
+                  value={editStudentData.enrollmentNumber}
+                  onChange={(e) => setEditStudentData({ ...editStudentData, enrollmentNumber: e.target.value })}
+                />
+              </div>
+
+              {editStudentData.type === 'student' ? (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                    <div className="form-group">
+                      <label>Série / Ano</label>
+                      <input
+                        type="text"
+                        className="input"
+                        placeholder="Ex: 5º Ano"
+                        value={editStudentData.grade}
+                        onChange={(e) => setEditStudentData({ ...editStudentData, grade: e.target.value })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Turma</label>
+                      <input
+                        type="text"
+                        className="input"
+                        placeholder="Ex: A"
+                        value={editStudentData.class_group}
+                        onChange={(e) => setEditStudentData({ ...editStudentData, class_group: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+                    <label>Nome do Responsável (Pai/Mãe)</label>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="Ex: Carlos Silva"
+                      value={editStudentData.guardianName}
+                      onChange={(e) => setEditStudentData({ ...editStudentData, guardianName: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: '1rem' }}>
+                    <label>WhatsApp do Responsável</label>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="Ex: (11) 99999-9999"
+                      value={editStudentData.guardianPhone}
+                      onChange={(e) => setEditStudentData({ ...editStudentData, guardianPhone: e.target.value })}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+                    <label>Função / Cargo (Setor / Departamento) *</label>
+                    <input
+                      type="text"
+                      className="input"
+                      required
+                      placeholder="Ex: Professor(a), Cozinha, Secretaria, Direção, TI"
+                      value={editStudentData.jobRole}
+                      onChange={(e) => setEditStudentData({ ...editStudentData, jobRole: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: '1rem' }}>
+                    <label>WhatsApp do Funcionário</label>
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="Ex: (11) 99999-9999"
+                      value={editStudentData.guardianPhone}
+                      onChange={(e) => setEditStudentData({ ...editStudentData, guardianPhone: e.target.value })}
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="modal-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setIsEditStudentModalOpen(false)}>
+                  Cancelar
+                </button>
+                <button type="submit" className="btn btn-success" disabled={savingEditStudent}>
+                  {savingEditStudent ? 'Salvando...' : 'Salvar Alterações'}
                 </button>
               </div>
             </form>

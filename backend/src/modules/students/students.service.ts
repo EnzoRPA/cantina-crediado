@@ -19,7 +19,7 @@ export class StudentsService {
    * List students with pagination, filtering, and search.
    */
   async list(schoolId: string, query: ListStudentsQuery): Promise<PaginatedResult<any>> {
-    const { page, limit, sortBy, sortOrder, search, grade, type, isActive, lowBalance } = query;
+    const { page, limit, sortBy, sortOrder, search, grade, type, billingType, isActive, lowBalance } = query;
     const offset = (page - 1) * limit;
 
     let baseQuery = db('students as s')
@@ -28,6 +28,7 @@ export class StudentsService {
 
     if (grade) baseQuery = baseQuery.where('s.grade', grade);
     if (type && type !== 'all') baseQuery = baseQuery.where('s.type', type);
+    if (billingType && billingType !== 'all') baseQuery = baseQuery.where('s.billing_type', billingType);
     if (isActive !== undefined) baseQuery = baseQuery.where('s.is_active', isActive);
     if (lowBalance) baseQuery = baseQuery.where('s.balance', '<', LOW_BALANCE_THRESHOLD);
     if (search && search.trim()) {
@@ -95,7 +96,7 @@ export class StudentsService {
     const data = await baseQuery
       .select(
         's.id', 'u.name', 'u.email', 'u.phone',
-        's.enrollment_number', 's.grade', 's.class_group', 's.balance', 's.type',
+        's.enrollment_number', 's.grade', 's.class_group', 's.balance', 's.type', 's.billing_type',
         's.photo_url', 's.birth_date', 's.is_active',
         's.cpf', 's.gender', 's.address_full',
         's.guardian_name', 's.guardian_cpf', 's.guardian_rg', 's.guardian_phone',
@@ -132,7 +133,7 @@ export class StudentsService {
       .where({ 's.id': studentId, 's.school_id': schoolId })
       .select(
         's.id', 'u.name', 'u.email', 'u.phone', 'u.id as user_id',
-        's.enrollment_number', 's.grade', 's.class_group', 's.balance', 's.type',
+        's.enrollment_number', 's.grade', 's.class_group', 's.balance', 's.type', 's.billing_type',
         's.photo_url', 's.birth_date', 's.is_active',
         's.cpf', 's.gender', 's.address_full',
         's.guardian_name', 's.guardian_cpf', 's.guardian_rg', 's.guardian_phone',
@@ -205,6 +206,7 @@ export class StudentsService {
           school_id: schoolId,
           enrollment_number: enrollmentNumber,
           type: input.type || 'student',
+          billing_type: input.billingType || 'pix_direto',
           grade: input.grade || null,
           class_group: input.classGroup || null,
           birth_date: input.birthDate || null,
@@ -283,6 +285,7 @@ export class StudentsService {
       const studentUpdates: Record<string, any> = { updated_at: new Date() };
       if (input.enrollmentNumber !== undefined) studentUpdates.enrollment_number = input.enrollmentNumber;
       if (input.type !== undefined) studentUpdates.type = input.type;
+      if (input.billingType !== undefined) studentUpdates.billing_type = input.billingType;
       if (input.grade !== undefined) studentUpdates.grade = input.grade;
       if (input.classGroup !== undefined) studentUpdates.class_group = input.classGroup;
       if (input.birthDate !== undefined) studentUpdates.birth_date = input.birthDate;
@@ -302,6 +305,26 @@ export class StudentsService {
     });
 
     return this.getById(schoolId, studentId);
+  }
+
+  /**
+   * Delete/Inactivate student by ID.
+   */
+  async delete(schoolId: string, studentId: string): Promise<{ success: boolean; message: string }> {
+    const student = await db('students')
+      .where({ id: studentId, school_id: schoolId })
+      .first();
+
+    if (!student) {
+      throw Errors.notFound('Aluno/Cliente');
+    }
+
+    await db('students')
+      .where({ id: studentId, school_id: schoolId })
+      .update({ is_active: false, updated_at: new Date() });
+
+    logger.info({ studentId, schoolId }, 'Student inactivated');
+    return { success: true, message: 'Cliente desativado com sucesso' };
   }
 
   /**
