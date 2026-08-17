@@ -830,15 +830,6 @@ export class PosService {
       )
       .orderBy('u.name', 'asc');
 
-    // Auto-heal DB: Ensure all students with active debts are classified as 'crediario'
-    if (pendingStudentIds.length > 0) {
-      db('students')
-        .whereIn('id', pendingStudentIds)
-        .where((qb) => qb.whereNot('billing_type', 'crediario').orWhereNull('billing_type'))
-        .update({ billing_type: 'crediario' })
-        .catch(() => {});
-    }
-
     const mappedPending = pendingDebts.map(d => ({
       student_id: d.student_id,
       student_name: d.student_name,
@@ -847,7 +838,7 @@ export class PosService {
       enrollment_number: d.enrollment_number || '',
       total_debt: Number(d.total_debt || 0),
       balance: Number(d.balance || 0),
-      billing_type: 'crediario',
+      billing_type: d.billing_type === 'pix_direto' ? 'pix_direto' : (d.billing_type || 'crediario'),
       last_purchase_at: d.last_purchase_at || ''
     }));
 

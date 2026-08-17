@@ -199,6 +199,7 @@ export class StudentsService {
         .returning(['id', 'email', 'name']);
 
       // Create student record
+      const billingType = input.billingType || (input as any).billing_type || 'pix_direto';
       const [student] = await trx('students')
         .insert({
           id: crypto.randomUUID(),
@@ -206,7 +207,7 @@ export class StudentsService {
           school_id: schoolId,
           enrollment_number: enrollmentNumber,
           type: input.type || 'student',
-          billing_type: input.billingType || 'pix_direto',
+          billing_type: billingType,
           grade: input.grade || null,
           class_group: input.classGroup || null,
           birth_date: input.birthDate || null,
@@ -283,9 +284,10 @@ export class StudentsService {
 
       // Update student record
       const studentUpdates: Record<string, any> = { updated_at: new Date() };
+      const billingType = input.billingType !== undefined ? input.billingType : (input as any).billing_type;
       if (input.enrollmentNumber !== undefined) studentUpdates.enrollment_number = input.enrollmentNumber;
       if (input.type !== undefined) studentUpdates.type = input.type;
-      if (input.billingType !== undefined) studentUpdates.billing_type = input.billingType;
+      if (billingType !== undefined) studentUpdates.billing_type = billingType;
       if (input.grade !== undefined) studentUpdates.grade = input.grade;
       if (input.classGroup !== undefined) studentUpdates.class_group = input.classGroup;
       if (input.birthDate !== undefined) studentUpdates.birth_date = input.birthDate;

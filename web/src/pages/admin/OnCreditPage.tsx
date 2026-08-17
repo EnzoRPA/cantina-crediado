@@ -708,10 +708,10 @@ export default function OnCreditPage() {
     if (e) e.stopPropagation();
     setEditingStudentId(student.student_id);
     const isEmp = (student.grade || '').toLowerCase().includes('func');
-    const isCred = student.billing_type === 'crediario' || (student.total_debt || 0) > 0;
+    const currentBilling = student.billing_type || 'pix_direto';
     setEditStudentData({
       type: isEmp ? 'employee' : 'student',
-      billingType: isCred ? 'crediario' : 'pix_direto',
+      billingType: currentBilling,
       name: student.student_name || '',
       enrollmentNumber: student.enrollment_number || '',
       grade: student.grade || '',
@@ -726,17 +726,18 @@ export default function OnCreditPage() {
       const { data } = await studentsApi.getById(student.student_id);
       if (data.success && data.data?.student) {
         const s = data.data.student;
-        setEditStudentData({
-          type: (s.type as 'student' | 'employee') || 'student',
-          billingType: (s.billing_type as 'pix_direto' | 'crediario') || (isCred ? 'crediario' : 'pix_direto'),
-          name: s.name || '',
-          enrollmentNumber: s.enrollment_number || '',
-          grade: s.grade || '',
-          class_group: s.class_group || '',
-          jobRole: s.grade || '',
-          guardianName: s.guardian_name || '',
-          guardianPhone: s.guardian_phone || s.phone || '',
-        });
+        setEditStudentData(prev => ({
+          ...prev,
+          type: (s.type as 'student' | 'employee') || prev.type,
+          billingType: (s.billing_type as 'pix_direto' | 'crediario') || prev.billingType,
+          name: s.name || prev.name,
+          enrollmentNumber: s.enrollment_number || prev.enrollmentNumber,
+          grade: s.grade || prev.grade,
+          class_group: s.class_group || prev.class_group,
+          jobRole: s.grade || prev.jobRole,
+          guardianName: s.guardian_name || prev.guardianName,
+          guardianPhone: s.guardian_phone || s.phone || prev.guardianPhone,
+        }));
       }
     } catch (err) {
       console.error('Erro ao carregar dados do cliente:', err);
@@ -760,6 +761,7 @@ export default function OnCreditPage() {
       await studentsApi.update(editingStudentId, {
         type: editStudentData.type,
         billingType: editStudentData.billingType,
+        billing_type: editStudentData.billingType,
         name: editStudentData.name.trim(),
         enrollmentNumber: editStudentData.enrollmentNumber.trim() || undefined,
         grade: gradeVal,
@@ -773,15 +775,24 @@ export default function OnCreditPage() {
       showToast('Cadastro atualizado com sucesso!', 'success');
       setIsEditStudentModalOpen(false);
 
+      setDebts(prev => prev.map(d => d.student_id === editingStudentId ? {
+        ...d,
+        student_name: editStudentData.name.trim(),
+        grade: gradeVal,
+        class_group: classGroupVal,
+        enrollment_number: editStudentData.enrollmentNumber.trim(),
+        billing_type: editStudentData.billingType,
+      } : d));
+
       if (selectedStudent && selectedStudent.student_id === editingStudentId) {
-        setSelectedStudent({
-          ...selectedStudent,
+        setSelectedStudent(prev => prev ? ({
+          ...prev,
           student_name: editStudentData.name.trim(),
           grade: gradeVal,
           class_group: classGroupVal,
           enrollment_number: editStudentData.enrollmentNumber.trim(),
           billing_type: editStudentData.billingType,
-        });
+        }) : null);
       }
 
       loadDebts();
@@ -1257,7 +1268,7 @@ export default function OnCreditPage() {
                       <div className="debt-card-info">
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                           <span className="debt-student-name" style={{ color: '#0f172a', fontWeight: 700 }}>{d.student_name}</span>
-                          {d.billing_type === 'crediario' || (d.total_debt || 0) > 0 ? (
+                          {d.billing_type === 'crediario' ? (
                             <span style={{ fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>📋 Crediário</span>
                           ) : (
                             <span style={{ fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}>⚡ Pix Direto</span>
@@ -1385,7 +1396,7 @@ export default function OnCreditPage() {
                 <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: '#0f172a' }}>
                   {selectedStudent.student_name}
                 </h2>
-                {selectedStudent.billing_type === 'crediario' || (selectedStudent.total_debt || 0) > 0 ? (
+                {selectedStudent.billing_type === 'crediario' ? (
                   <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '12px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>📋 Crediário</span>
                 ) : (
                   <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '12px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}>⚡ Pix Direto</span>
@@ -1684,12 +1695,13 @@ export default function OnCreditPage() {
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <button
                       type="button"
-                      className={`btn btn-sm ${selectedStudent.billing_type === 'pix_direto' && (selectedStudent.total_debt || 0) === 0 ? 'btn-primary' : 'btn-outline'}`}
+                      className={`btn btn-sm ${selectedStudent.billing_type === 'pix_direto' ? 'btn-primary' : 'btn-outline'}`}
                       style={{ flex: 1, fontSize: '0.8rem', justifyContent: 'center' }}
                       onClick={async () => {
                         try {
-                          await studentsApi.update(selectedStudent.student_id, { billingType: 'pix_direto' });
-                          setSelectedStudent({ ...selectedStudent, billing_type: 'pix_direto' });
+                          await studentsApi.update(selectedStudent.student_id, { billingType: 'pix_direto', billing_type: 'pix_direto' });
+                          setSelectedStudent(prev => prev ? ({ ...prev, billing_type: 'pix_direto' }) : null);
+                          setDebts(prev => prev.map(d => d.student_id === selectedStudent.student_id ? { ...d, billing_type: 'pix_direto' } : d));
                           showToast('Perfil alterado para Pix Direto!', 'success');
                           loadDebts();
                         } catch (err) {
@@ -1701,12 +1713,13 @@ export default function OnCreditPage() {
                     </button>
                     <button
                       type="button"
-                      className={`btn btn-sm ${selectedStudent.billing_type === 'crediario' || (selectedStudent.total_debt || 0) > 0 ? 'btn-primary' : 'btn-outline'}`}
+                      className={`btn btn-sm ${selectedStudent.billing_type === 'crediario' ? 'btn-primary' : 'btn-outline'}`}
                       style={{ flex: 1, fontSize: '0.8rem', justifyContent: 'center' }}
                       onClick={async () => {
                         try {
-                          await studentsApi.update(selectedStudent.student_id, { billingType: 'crediario' });
-                          setSelectedStudent({ ...selectedStudent, billing_type: 'crediario' });
+                          await studentsApi.update(selectedStudent.student_id, { billingType: 'crediario', billing_type: 'crediario' });
+                          setSelectedStudent(prev => prev ? ({ ...prev, billing_type: 'crediario' }) : null);
+                          setDebts(prev => prev.map(d => d.student_id === selectedStudent.student_id ? { ...d, billing_type: 'crediario' } : d));
                           showToast('Perfil alterado para Crediário!', 'success');
                           loadDebts();
                         } catch (err) {
