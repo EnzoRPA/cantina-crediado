@@ -22,6 +22,12 @@ interface StudentItem {
   grade?: string;
   class_group?: string;
   enrollment_number?: string;
+  guardian_name?: string;
+  guardian_phone?: string;
+  type?: 'student' | 'employee';
+  total_debt?: number;
+  balance?: number;
+  billing_type?: 'pix_direto' | 'crediario';
 }
 
 export interface ScannedBatchItem {
@@ -436,7 +442,7 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
       if (!manualSearch.trim()) return false;
       const term = normalizeText(manualSearch);
       const searchableText = normalizeText(
-        `${s.student_name} ${s.grade || ''} ${s.class_group || ''} ${s.enrollment_number || ''}`
+        `${s.student_name} ${s.grade || ''} ${s.class_group || ''} ${s.enrollment_number || ''} ${s.guardian_name || ''} ${s.type || ''}`
       );
       if (searchableText.includes(term)) return true;
       const tokens = term.split(/\s+/).filter(Boolean);
@@ -830,13 +836,13 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
                         top: '100%',
                         left: 0,
                         right: 0,
-                        zIndex: 20,
+                        zIndex: 30,
                         background: 'var(--bg-card, #ffffff)',
-                        border: '1px solid var(--border-color, #e2e8f0)',
-                        borderRadius: '8px',
+                        border: '1px solid var(--border-color, #cbd5e1)',
+                        borderRadius: '10px',
                         marginTop: '4px',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                        maxHeight: '180px',
+                        boxShadow: '0 10px 25px -5px rgba(0,0,0,0.15)',
+                        maxHeight: '260px',
                         overflowY: 'auto',
                       }}
                     >
@@ -848,17 +854,55 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
                             setManualSearch('');
                           }}
                           style={{
-                            padding: '0.5rem 0.85rem',
+                            padding: '0.65rem 0.85rem',
                             borderBottom: '1px solid var(--border-color, #f1f5f9)',
                             cursor: 'pointer',
                             display: 'flex',
                             justifyContent: 'space-between',
                             alignItems: 'center',
-                            fontSize: '0.82rem',
+                            transition: 'background 0.15s ease',
                           }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover, #f8fafc)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                         >
-                          <span><strong>{s.student_name}</strong> ({s.grade || 'Geral'})</span>
-                          <Plus size={14} color="#16a34a" />
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', minWidth: 0, flex: 1, paddingRight: '0.5rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              <strong style={{ color: 'var(--text-main, #0f172a)', fontSize: '0.9rem' }}>
+                                {s.student_name}
+                              </strong>
+                              {s.billing_type === 'crediario' ? (
+                                <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>
+                                  📋 Crediário
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}>
+                                  ⚡ Pix Direto
+                                </span>
+                              )}
+                              {s.type === 'employee' && (
+                                <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: '#f3e8ff', color: '#7e22ce', fontWeight: 700 }}>
+                                  💼 Funcionário
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '0.76rem', color: 'var(--text-muted, #64748b)', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                              <span><strong>Turma:</strong> {s.grade || 'Geral'} {s.class_group || ''}</span>
+                              {s.enrollment_number && <span>• <strong>Matrícula:</strong> {s.enrollment_number}</span>}
+                              {s.guardian_name && <span>• <strong>Resp:</strong> {s.guardian_name}</span>}
+                              {(s.total_debt || 0) > 0 ? (
+                                <span style={{ color: '#dc2626', fontWeight: 700 }}>• Débito: {formatCurrency(s.total_debt || 0)}</span>
+                              ) : (s.balance || 0) > 0 ? (
+                                <span style={{ color: '#16a34a', fontWeight: 700 }}>• Saldo: +{formatCurrency(s.balance || 0)}</span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-ghost"
+                            style={{ color: '#16a34a', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 700, flexShrink: 0 }}
+                          >
+                            <Plus size={16} /> Adicionar
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -933,6 +977,84 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
                     onChange={(e) => setManualSearch(e.target.value)}
                     style={{ paddingLeft: '2.2rem', fontSize: '0.85rem' }}
                   />
+                  {filteredStudentsForManualAdd.length > 0 && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        right: 0,
+                        zIndex: 30,
+                        background: 'var(--bg-card, #ffffff)',
+                        border: '1px solid var(--border-color, #cbd5e1)',
+                        borderRadius: '10px',
+                        marginTop: '4px',
+                        boxShadow: '0 10px 25px -5px rgba(0,0,0,0.15)',
+                        maxHeight: '260px',
+                        overflowY: 'auto',
+                      }}
+                    >
+                      {filteredStudentsForManualAdd.map((s) => (
+                        <div
+                          key={s.student_id}
+                          onClick={() => {
+                            addStudentToBatch(s);
+                            setManualSearch('');
+                          }}
+                          style={{
+                            padding: '0.65rem 0.85rem',
+                            borderBottom: '1px solid var(--border-color, #f1f5f9)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            transition: 'background 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover, #f8fafc)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                        >
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', minWidth: 0, flex: 1, paddingRight: '0.5rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              <strong style={{ color: 'var(--text-main, #0f172a)', fontSize: '0.9rem' }}>
+                                {s.student_name}
+                              </strong>
+                              {s.billing_type === 'crediario' ? (
+                                <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>
+                                  📋 Crediário
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}>
+                                  ⚡ Pix Direto
+                                </span>
+                              )}
+                              {s.type === 'employee' && (
+                                <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: '#f3e8ff', color: '#7e22ce', fontWeight: 700 }}>
+                                  💼 Funcionário
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '0.76rem', color: 'var(--text-muted, #64748b)', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                              <span><strong>Turma:</strong> {s.grade || 'Geral'} {s.class_group || ''}</span>
+                              {s.enrollment_number && <span>• <strong>Matrícula:</strong> {s.enrollment_number}</span>}
+                              {s.guardian_name && <span>• <strong>Resp:</strong> {s.guardian_name}</span>}
+                              {(s.total_debt || 0) > 0 ? (
+                                <span style={{ color: '#dc2626', fontWeight: 700 }}>• Débito: {formatCurrency(s.total_debt || 0)}</span>
+                              ) : (s.balance || 0) > 0 ? (
+                                <span style={{ color: '#16a34a', fontWeight: 700 }}>• Saldo: +{formatCurrency(s.balance || 0)}</span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-ghost"
+                            style={{ color: '#16a34a', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 700, flexShrink: 0 }}
+                          >
+                            <Plus size={16} /> Adicionar
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

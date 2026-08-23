@@ -804,12 +804,15 @@ export class PosService {
         's.class_group',
         's.enrollment_number',
         's.balance',
-        's.billing_type'
+        's.billing_type',
+        's.guardian_name',
+        's.guardian_phone',
+        's.type'
       )
       .sum('tp.amount as total_debt')
       .max('t.created_at as last_purchase_at')
       .max('tp.amount as last_purchase_amount')
-      .groupBy('s.id', 'u.name', 's.grade', 's.class_group', 's.enrollment_number', 's.balance', 's.billing_type')
+      .groupBy('s.id', 'u.name', 's.grade', 's.class_group', 's.enrollment_number', 's.balance', 's.billing_type', 's.guardian_name', 's.guardian_phone', 's.type')
       .orderBy('student_name', 'asc');
 
     // 2. Fetch ALL other active students registered in the school (so every student appears in search)
@@ -827,7 +830,10 @@ export class PosService {
         's.class_group',
         's.enrollment_number',
         's.balance',
-        's.billing_type'
+        's.billing_type',
+        's.guardian_name',
+        's.guardian_phone',
+        's.type'
       )
       .orderBy('u.name', 'asc');
 
@@ -859,6 +865,9 @@ export class PosService {
       grade: d.grade || '',
       class_group: d.class_group || '',
       enrollment_number: d.enrollment_number || '',
+      guardian_name: d.guardian_name || '',
+      guardian_phone: d.guardian_phone || '',
+      type: d.type || 'student',
       total_debt: Number(d.total_debt || 0),
       balance: Number(d.balance || 0),
       billing_type: d.billing_type === 'pix_direto' ? 'pix_direto' : (d.billing_type || 'crediario'),
@@ -874,6 +883,9 @@ export class PosService {
         grade: s.grade || '',
         class_group: s.class_group || '',
         enrollment_number: s.enrollment_number || '',
+        guardian_name: s.guardian_name || '',
+        guardian_phone: s.guardian_phone || '',
+        type: s.type || 'student',
         total_debt: 0,
         balance: Number(s.balance || 0),
         billing_type: s.billing_type === 'crediario' ? 'crediario' : 'pix_direto',
