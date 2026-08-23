@@ -105,8 +105,30 @@ Responda ESTRITAMENTE em formato JSON com o seguinte esquema (sem blocos markdow
 }
 `;
 
-    // 4. Chamada à API do Gemini com fallback de modelos
-    const candidateModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro'];
+    // 4. Descobrir dinamicamente os modelos habilitados para a chave informada
+    let modelsToTry = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-1.5-flash-8b', 'gemini-1.5-pro'];
+
+    try {
+      const listResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+      if (listResp.ok) {
+        const listData: any = await listResp.json();
+        const modelsList: any[] = listData?.models || [];
+        const supported = modelsList
+          .filter((m) => m.supportedGenerationMethods?.includes('generateContent'))
+          .map((m) => m.name.replace('models/', ''));
+
+        if (supported.length > 0) {
+          // Ordenar preferindo flash por velocidade e custo
+          const flashModels = supported.filter((m) => m.includes('flash'));
+          const otherModels = supported.filter((m) => !m.includes('flash'));
+          modelsToTry = [...flashModels, ...otherModels];
+          logger.info({ modelsToTry }, 'Modelos suportados encontrados para a chave');
+        }
+      }
+    } catch (listErr) {
+      logger.warn({ listErr }, 'Não foi possível listar modelos dinamicamente, usando candidatos padrão');
+    }
+
     let lastErrorText = '';
     let responseData: any = null;
 
@@ -130,10 +152,10 @@ Responda ESTRITAMENTE em formato JSON com o seguinte esquema (sem blocos markdow
       },
     };
 
-    for (const model of candidateModels) {
+    for (const model of modelsToTry) {
       try {
         const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        logger.info(`🤖 Tentando análise com modelo ${model}...`);
+        logger.info(`🤖 Enviando folha para análise com modelo ${model}...`);
 
         const response = await fetch(geminiUrl, {
           method: 'POST',
