@@ -105,8 +105,10 @@ Responda ESTRITAMENTE em formato JSON com o seguinte esquema (sem blocos markdow
 }
 `;
 
-    // 4. Chamada à API do Gemini
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    // 4. Chamada à API do Gemini com fallback de modelos
+    const candidateModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-pro'];
+    let lastErrorText = '';
+    let responseData: any = null;
 
     const requestBody = {
       contents: [
@@ -128,20 +130,50 @@ Responda ESTRITAMENTE em formato JSON com o seguinte esquema (sem blocos markdow
       },
     };
 
-    logger.info('🤖 Enviando folha para análise com Gemini Vision...');
-    const response = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    });
+    for (const model of candidateModels) {
+      try {
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        logger.info(`🤖 Tentando análise com modelo ${model}...`);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      logger.error({ errorText, status: response.status }, 'Erro na resposta do Gemini API');
-      throw Errors.badRequest(`Erro ao consultar API de Visão (Gemini): ${response.statusText}`);
+        const response = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey,
+          },
+          body: JSON.stringify(requestBody),
+        });
+
+        if (response.ok) {
+          responseData = await response.json();
+          logger.info(`✅ Análise concluída com sucesso usando modelo ${model}`);
+          break;
+        } else {
+          lastErrorText = await response.text();
+          logger.warn({ model, status: response.status, lastErrorText }, `Falha com modelo ${model}`);
+        }
+      } catch (reqErr: any) {
+        lastErrorText = reqErr.message || String(reqErr);
+      }
     }
 
-    const data: any = await response.json();
+    if (!responseData) {
+      let friendlyMsg = lastErrorText;
+      try {
+        const parsedErr = JSON.parse(lastErrorText);
+        friendlyMsg = parsedErr.error?.message || lastErrorText;
+      } catch (_) {}
+
+      if (friendlyMsg.includes('API_KEY_INVALID') || !apiKey.startsWith('AIzaSy')) {
+        throw Errors.badRequest(
+          'Chave de API do Gemini inválida. A chave oficial do Google AI Studio deve começar com "AIzaSy...". Gere uma chave gratuita em aistudio.google.com/app/apikey'
+        );
+      }
+
+      throw Errors.badRequest(`Erro ao consultar API de Visão (Gemini): ${friendlyMsg}`);
+    }
+
+    const data: any = responseData;
     const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
 
     logger.info({ rawText }, 'Resposta do Gemini Vision recebida');
