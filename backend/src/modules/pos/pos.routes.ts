@@ -157,6 +157,24 @@ router.delete(
 );
 
 router.post(
+  '/on-credit/scan-sheet',
+  roleGuard('admin', 'manager', 'operator'),
+  posController.scanSheet.bind(posController)
+);
+
+router.post(
+  '/backup/run',
+  roleGuard('admin'),
+  posController.triggerBackup.bind(posController)
+);
+
+router.get(
+  '/backup/list',
+  roleGuard('admin'),
+  posController.getBackups.bind(posController)
+);
+
+router.post(
   '/reset-test-sales',
   roleGuard('admin'),
   posController.resetTestSales.bind(posController)

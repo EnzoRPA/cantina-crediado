@@ -1,5 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Camera, Volume2, Trash2, Plus, Download, Send, Search, RefreshCw } from 'lucide-react';
+import {
+  X,
+  Camera,
+  Trash2,
+  Plus,
+  Download,
+  Send,
+  Search,
+  RefreshCw,
+  Sparkles,
+  UploadCloud,
+  KeyRound,
+  RotateCcw,
+} from 'lucide-react';
+import { posApi } from '../../services/api';
 import { showToast } from '../common/Toast';
 
 interface StudentItem {
@@ -17,6 +31,7 @@ export interface ScannedBatchItem {
   enrollmentNumber?: string;
   amountInput: string;
   scannedAt: Date;
+  confidence?: 'high' | 'medium' | 'low';
 }
 
 interface CameraQRScannerModalProps {
@@ -27,19 +42,19 @@ interface CameraQRScannerModalProps {
 }
 
 // Audio beep synthesizer using Web Audio API
-function playScanBeep() {
+function playScanBeep(isSuccess = true) {
   try {
     const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(880, ctx.currentTime); // A5 tone
+    osc.type = isSuccess ? 'sine' : 'triangle';
+    osc.frequency.setValueAtTime(isSuccess ? 880 : 440, ctx.currentTime);
     gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.18);
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start();
-    osc.stop(ctx.currentTime + 0.15);
+    osc.stop(ctx.currentTime + 0.18);
   } catch (_) {}
 }
 
@@ -82,12 +97,27 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
   allStudents,
   onConfirmBatch,
 }) => {
+  // Modal Mode: 'photo_ai' (foto única) or 'qr_stream' (bipagem contínua 1 a 1)
+  const [scanMode, setScanMode] = useState<'photo_ai' | 'qr_stream'>('photo_ai');
+
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [cameraActive, setCameraActive] = useState(false);
   const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
   const [scannedItems, setScannedItems] = useState<ScannedBatchItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [launchDate, setLaunchDate] = useState<string>(getTodayStr());
+
+  // Photo & AI Vision state
+  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
+  const [analyzingPhoto, setAnalyzingPhoto] = useState(false);
+  const [customGeminiKey, setCustomGeminiKey] = useState(
+    () => localStorage.getItem('cantina-gemini-key') || ''
+  );
+  const [showKeyConfig, setShowKeyConfig] = useState(false);
+  void cameraActive;
 
   // Manual Add Student Dropdown State
   const [manualSearch, setManualSearch] = useState('');
@@ -98,6 +128,7 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
   useEffect(() => {
     if (!isOpen) {
       stopCamera();
+      setCapturedPhoto(null);
       return;
     }
     startCamera();
@@ -106,17 +137,19 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
     };
   }, [isOpen]);
 
-  // Camera initialization and continuous QR scanning loop
+  // Camera initialization
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
       });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
         setCameraActive(true);
-        startScanLoop();
+        if (scanMode === 'qr_stream') {
+          startScanLoop();
+        }
       }
     } catch (err) {
       console.warn('Unable to access primary camera, trying default video:', err);
@@ -126,12 +159,14 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
           videoRef.current.srcObject = fallbackStream;
           videoRef.current.play();
           setCameraActive(true);
-          startScanLoop();
+          if (scanMode === 'qr_stream') {
+            startScanLoop();
+          }
         }
       } catch (fallbackErr) {
         console.error('Camera permission denied or device unsupported:', fallbackErr);
         setCameraActive(false);
-        showToast('Não foi possível acessar a câmera. Você ainda pode adicionar alunos manualmente.', 'info');
+        showToast('Não foi possível acessar a câmera. Você pode fazer upload da foto abaixo.', 'info');
       }
     }
   };
@@ -145,6 +180,7 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
     setCameraActive(false);
   };
 
+  // Continuous QR scan loop for 'qr_stream' mode
   const startScanLoop = () => {
     let animId: number;
     let detector: any = null;
@@ -169,7 +205,9 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
           } catch (_) {}
         }
       }
-      animId = requestAnimationFrame(scanFrame);
+      if (scanMode === 'qr_stream') {
+        animId = requestAnimationFrame(scanFrame);
+      }
     };
 
     animId = requestAnimationFrame(scanFrame);
@@ -182,7 +220,6 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
     setLastScannedCode(code);
     setTimeout(() => setLastScannedCode(null), 2000); // 2 sec cooldown per code
 
-    // Extract studentId or enrollment number from QR format ("STUDENT:<id>" or raw id)
     let extractedId = code;
     if (code.startsWith('STUDENT:')) {
       extractedId = code.replace('STUDENT:', '').trim();
@@ -200,7 +237,7 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
       return;
     }
 
-    playScanBeep();
+    playScanBeep(true);
     addStudentToBatch(targetStudent);
   };
 
@@ -222,7 +259,6 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
         scannedAt: new Date(),
       };
 
-      // Focus new input on next tick
       setTimeout(() => {
         const inputEl = inputRefs.current[student.student_id];
         if (inputEl) {
@@ -233,6 +269,97 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
 
       return [newItem, ...prev];
     });
+  };
+
+  // --- Photo Capture & AI Recognition ---
+
+  const handleCapturePhotoFromCamera = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+      setCapturedPhoto(dataUrl);
+      playScanBeep(true);
+      showToast('📸 Foto da folha capturada! Clique em "Analisar com IA".', 'success');
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      setCapturedPhoto(dataUrl);
+      playScanBeep(true);
+      showToast('📁 Foto carregada com sucesso!', 'success');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAnalyzePhotoWithAI = async () => {
+    if (!capturedPhoto) {
+      showToast('Tire uma foto ou carregue uma imagem da folha primeiro.', 'info');
+      return;
+    }
+
+    setAnalyzingPhoto(true);
+    try {
+      const { data } = await posApi.scanSheetImage({
+        imageBase64: capturedPhoto,
+        apiKey: customGeminiKey.trim() || undefined,
+      });
+
+      const items = data?.data?.items || [];
+
+      if (items.length === 0) {
+        showToast('Nenhum consumo manuscrito foi identificado nesta foto da folha.', 'info');
+        return;
+      }
+
+      playScanBeep(true);
+      showToast(`🎉 Sucesso! IA identificou ${items.length} consumos preenchidos na folha!`, 'success');
+
+      // Mapear para a lista de itens
+      setScannedItems((prev) => {
+        const existingIds = new Set(prev.map((i) => i.studentId));
+        const newBatch: ScannedBatchItem[] = items.map((extracted: any) => ({
+          studentId: extracted.student_id,
+          studentName: extracted.student_name,
+          grade: extracted.grade,
+          enrollmentNumber: extracted.enrollment_number,
+          amountInput: extracted.amount.toString(),
+          scannedAt: new Date(),
+          confidence: extracted.confidence,
+        }));
+
+        // Adicionar apenas os que não existiam ainda ou substituir com os lidos
+        const filteredNew = newBatch.filter((item) => !existingIds.has(item.studentId));
+        return [...filteredNew, ...prev];
+      });
+    } catch (err: any) {
+      console.error('Erro na análise da folha:', err);
+      showToast(
+        err.response?.data?.error?.message || 'Erro ao processar imagem da folha com IA.',
+        'error'
+      );
+    } finally {
+      setAnalyzingPhoto(false);
+    }
+  };
+
+  const handleSaveGeminiKey = () => {
+    localStorage.setItem('cantina-gemini-key', customGeminiKey);
+    setShowKeyConfig(false);
+    showToast('Chave salva com sucesso!', 'success');
   };
 
   const handleRemoveItem = (studentId: string) => {
@@ -252,7 +379,7 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
 
   const handleSaveBatch = async () => {
     if (scannedItems.length === 0) {
-      showToast('Nenhum aluno foi escaneado para lançamento.', 'info');
+      showToast('Nenhum aluno na lista para lançamento.', 'info');
       return;
     }
 
@@ -284,7 +411,7 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
     }
 
     const todayStr = new Date().toISOString().split('T')[0];
-    let csvContent = '\uFEFF'; // UTF-8 BOM
+    let csvContent = '\uFEFF';
     csvContent += 'Data;Matrícula;Nome do Aluno;Turma;Valor Consumido (R$)\n';
 
     scannedItems.forEach((item) => {
@@ -296,7 +423,7 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `consumo_fiado_${todayStr}.csv`);
+    link.setAttribute('download', `consumo_folha_${todayStr}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -321,12 +448,22 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
 
   return (
     <div className="modal-overlay animate-fadeIn" style={{ zIndex: 1150 }}>
+      {/* Hidden canvas for taking snapshot from webcam */}
+      <canvas ref={canvasRef} style={{ display: 'none' }} />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={handleFileUpload}
+      />
+
       <div
         className="modal-content"
         style={{
-          maxWidth: '920px',
+          maxWidth: '960px',
           width: '95%',
-          maxHeight: '92vh',
+          maxHeight: '94vh',
           display: 'flex',
           flexDirection: 'column',
           padding: 0,
@@ -337,7 +474,7 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
         {/* Modal Header */}
         <div
           style={{
-            padding: '1.25rem 1.5rem',
+            padding: '1.1rem 1.5rem',
             background: 'var(--bg-card, #ffffff)',
             borderBottom: '1px solid var(--border-color, #e2e8f0)',
             display: 'flex',
@@ -346,215 +483,474 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
           }}
         >
           <div>
-            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>
-              📷 Escanear Folha / Lançar Consumo via Câmera (Com Data 📅)
-            </h3>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              Aponte a câmera para os QR Codes da folha impressa para identificar e registrar consumos instantaneamente.
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                {scanMode === 'photo_ai' ? '📸 Foto da Folha Inteira (IA Vision)' : '⚡ Leitor de QR Code Contínuo'}
+              </h3>
+              <span
+                style={{
+                  background: scanMode === 'photo_ai' ? '#dcfce7' : '#e0e7ff',
+                  color: scanMode === 'photo_ai' ? '#15803d' : '#3730a3',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                }}
+              >
+                {scanMode === 'photo_ai' ? 'Recomendado (1 Foto Só)' : 'Modo 1 a 1'}
+              </span>
+            </div>
+            <span style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>
+              {scanMode === 'photo_ai'
+                ? 'Tire uma foto ou carregue a imagem da folha A4. A IA lê todas as caixinhas de valor de uma vez só!'
+                : 'Aponte a câmera sucessivamente para os QR Codes de cada aluno para registrá-los.'}
             </span>
           </div>
-          <button type="button" className="btn btn-ghost" onClick={onClose} style={{ padding: '0.5rem' }}>
-            <X size={20} />
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setShowKeyConfig(!showKeyConfig)}
+              title="Configurar Chave Gemini"
+              style={{ color: customGeminiKey ? '#16a34a' : '#64748b' }}
+            >
+              <KeyRound size={18} />
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={onClose} style={{ padding: '0.5rem' }}>
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+
+        {/* Mode Selector Tabs */}
+        <div
+          style={{
+            display: 'flex',
+            background: 'var(--bg-hover, #f8fafc)',
+            borderBottom: '1px solid var(--border-color, #e2e8f0)',
+            padding: '0.5rem 1.5rem',
+            gap: '0.75rem',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setScanMode('photo_ai')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '0.5rem 1rem',
+              borderRadius: '8px',
+              fontWeight: 700,
+              fontSize: '0.88rem',
+              cursor: 'pointer',
+              border: scanMode === 'photo_ai' ? '1px solid #16a34a' : '1px solid transparent',
+              background: scanMode === 'photo_ai' ? '#ffffff' : 'transparent',
+              color: scanMode === 'photo_ai' ? '#16a34a' : '#64748b',
+              boxShadow: scanMode === 'photo_ai' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+            }}
+          >
+            <Sparkles size={16} /> 📸 Foto Única da Folha (IA OCR)
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setScanMode('qr_stream');
+              startScanLoop();
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '0.5rem 1rem',
+              borderRadius: '8px',
+              fontWeight: 700,
+              fontSize: '0.88rem',
+              cursor: 'pointer',
+              border: scanMode === 'qr_stream' ? '1px solid #2563eb' : '1px solid transparent',
+              background: scanMode === 'qr_stream' ? '#ffffff' : 'transparent',
+              color: scanMode === 'qr_stream' ? '#2563eb' : '#64748b',
+              boxShadow: scanMode === 'qr_stream' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+            }}
+          >
+            <Camera size={16} /> ⚡ Bipagem Contínua (QR Code 1 a 1)
           </button>
         </div>
 
+        {/* Optional Gemini Key Drawer */}
+        {showKeyConfig && (
+          <div
+            style={{
+              padding: '0.75rem 1.5rem',
+              background: '#fefce8',
+              borderBottom: '1px solid #fef08a',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem',
+            }}
+          >
+            <KeyRound size={18} color="#ca8a04" />
+            <div style={{ flex: 1 }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#854d0e', display: 'block' }}>
+                Chave Gemini API (Opcional se já estiver no .env do backend):
+              </span>
+              <input
+                type="password"
+                className="form-input"
+                placeholder="AIzaSy..."
+                value={customGeminiKey}
+                onChange={(e) => setCustomGeminiKey(e.target.value)}
+                style={{ fontSize: '0.82rem', padding: '3px 8px', width: '100%', maxWidth: '400px' }}
+              />
+            </div>
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              onClick={handleSaveGeminiKey}
+              style={{ fontSize: '0.8rem', alignSelf: 'flex-end' }}
+            >
+              Salvar Chave
+            </button>
+          </div>
+        )}
+
         {/* Content Body */}
         <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1.25rem' }}>
-          {/* Top Row: Video Camera Feed + Stats */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) 1fr', gap: '1.25rem' }}>
-            {/* Video Container */}
-            <div
-              style={{
-                position: 'relative',
-                background: '#0f172a',
-                borderRadius: '12px',
-                overflow: 'hidden',
-                aspectRatio: '4/3',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: '2px solid #334155',
-              }}
-            >
-              <video
-                ref={videoRef}
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                muted
-                playsInline
-              />
-
-              {/* Target Scanner Reticle */}
+          {/* Top Section: Mode View */}
+          {scanMode === 'photo_ai' ? (
+            /* Mode 1: Photo & IA Vision */
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 380px) 1fr', gap: '1.25rem' }}>
+              {/* Camera Live Preview or Captured Image */}
               <div
                 style={{
-                  position: 'absolute',
-                  width: '180px',
-                  height: '180px',
-                  border: '2px dashed #22c55e',
-                  borderRadius: '16px',
-                  boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.45)',
+                  position: 'relative',
+                  background: '#0f172a',
+                  borderRadius: '12px',
+                  overflow: 'hidden',
+                  aspectRatio: '4/3',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  pointerEvents: 'none',
+                  border: '2px solid #334155',
                 }}
               >
-                <div style={{ width: '12px', height: '12px', background: '#22c55e', borderRadius: '50%' }} />
-              </div>
-
-              {/* Live Scanner Badge */}
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: '10px',
-                  left: '10px',
-                  right: '10px',
-                  background: 'rgba(15, 23, 42, 0.85)',
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  color: '#ffffff',
-                  fontSize: '0.78rem',
-                }}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Camera size={14} className={cameraActive ? 'animate-pulse' : ''} color="#22c55e" />
-                  {cameraActive ? 'Câmera Ativa — Aponte para o QR Code' : 'Câmera Inativa'}
-                </span>
-                <Volume2 size={14} color="#94a3b8" />
-              </div>
-            </div>
-
-            {/* Quick Stats & Manual Add Card */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', justifyContent: 'space-between' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.3fr', gap: '0.65rem' }}>
-                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '0.75rem', borderRadius: '12px' }}>
-                  <span style={{ fontSize: '0.75rem', color: '#166534', fontWeight: 600 }}>Alunos Escaneados</span>
-                  <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#15803d', marginTop: '2px' }}>
-                    {scannedItems.length}
-                  </div>
-                </div>
-
-                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '0.75rem', borderRadius: '12px' }}>
-                  <span style={{ fontSize: '0.75rem', color: '#1e40af', fontWeight: 600 }}>Total Folha</span>
-                  <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#1d4ed8', marginTop: '2px' }}>
-                    {formatCurrency(grandTotalBatch)}
-                  </div>
-                </div>
-
-                <div style={{ background: 'var(--bg-card, #ffffff)', border: '1px solid var(--border-color, #cbd5e1)', padding: '0.65rem', borderRadius: '12px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-main, #334155)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '3px' }}>
-                    📅 Data do Lançamento
-                  </label>
-                  <input
-                    type="date"
-                    className="form-input"
-                    value={launchDate}
-                    onChange={(e) => setLaunchDate(e.target.value)}
-                    style={{ fontWeight: 800, fontSize: '0.85rem', padding: '3px 6px', width: '100%', cursor: 'pointer' }}
+                {capturedPhoto ? (
+                  <img
+                    src={capturedPhoto}
+                    alt="Folha capturada"
+                    style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000000' }}
                   />
-                  <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-xs"
-                      onClick={() => setLaunchDate(getTodayStr())}
-                      style={{ padding: '1px 6px', fontSize: '0.7rem', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '4px', fontWeight: 600, background: launchDate === getTodayStr() ? '#dbeafe' : 'transparent' }}
-                    >
-                      Hoje
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-xs"
-                      onClick={() => {
-                        const y = new Date();
-                        y.setDate(y.getDate() - 1);
-                        setLaunchDate(y.toISOString().split('T')[0]);
+                ) : (
+                  <video
+                    ref={videoRef}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    muted
+                    playsInline
+                  />
+                )}
+
+                {/* Reticle Guide */}
+                {!capturedPhoto && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      width: '85%',
+                      height: '85%',
+                      border: '2px dashed rgba(34, 197, 94, 0.7)',
+                      borderRadius: '8px',
+                      pointerEvents: 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <span
+                      style={{
+                        background: 'rgba(15, 23, 42, 0.7)',
+                        color: '#ffffff',
+                        fontSize: '0.75rem',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
                       }}
-                      style={{ padding: '1px 6px', fontSize: '0.7rem', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '4px', fontWeight: 600 }}
                     >
-                      Ontem
-                    </button>
+                      Enquadre a folha A4 inteira
+                    </span>
                   </div>
+                )}
+
+                {/* Overlay Action Badges */}
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: '10px',
+                    left: '10px',
+                    right: '10px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: '6px',
+                  }}
+                >
+                  {capturedPhoto ? (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-secondary"
+                      onClick={() => setCapturedPhoto(null)}
+                      style={{ background: 'rgba(15, 23, 42, 0.85)', color: '#ffffff', fontSize: '0.78rem' }}
+                    >
+                      <RotateCcw size={14} /> Tirar Outra Foto
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary"
+                      onClick={handleCapturePhotoFromCamera}
+                      style={{
+                        background: '#16a34a',
+                        color: '#ffffff',
+                        fontWeight: 700,
+                        fontSize: '0.82rem',
+                        width: '100%',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Camera size={16} /> 📷 Capturar Foto da Folha
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* Manual Student Addition Search */}
-              <div
-                style={{
-                  background: 'var(--bg-card, #ffffff)',
-                  border: '1px solid var(--border-color, #e2e8f0)',
-                  borderRadius: '12px',
-                  padding: '1rem',
-                }}
-              >
-                <label style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)', display: 'block', marginBottom: '0.5rem' }}>
-                  ➕ Adicionar Aluno Sem Escanear QR Code
-                </label>
+              {/* AI Controls & Actions */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', justifyContent: 'space-between' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.3fr', gap: '0.65rem' }}>
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '0.75rem', borderRadius: '12px' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#166534', fontWeight: 600 }}>Alunos Identificados</span>
+                    <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#15803d', marginTop: '2px' }}>
+                      {scannedItems.length}
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '0.75rem', borderRadius: '12px' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#1e40af', fontWeight: 600 }}>Total Calculado</span>
+                    <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#1d4ed8', marginTop: '2px' }}>
+                      {formatCurrency(grandTotalBatch)}
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'var(--bg-card, #ffffff)', border: '1px solid var(--border-color, #cbd5e1)', padding: '0.65rem', borderRadius: '12px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-main, #334155)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '3px' }}>
+                      📅 Data do Lançamento
+                    </label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={launchDate}
+                      onChange={(e) => setLaunchDate(e.target.value)}
+                      style={{ fontWeight: 800, fontSize: '0.85rem', padding: '3px 6px', width: '100%', cursor: 'pointer' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Upload & Run AI Banner */}
+                <div
+                  style={{
+                    background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)',
+                    border: '1px solid #86efac',
+                    borderRadius: '12px',
+                    padding: '1rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.75rem',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Sparkles size={20} color="#16a34a" />
+                    <div>
+                      <strong style={{ color: '#166534', fontSize: '0.92rem' }}>Reconhecimento Automático de Manuscrito</strong>
+                      <p style={{ margin: 0, fontSize: '0.8rem', color: '#14532d' }}>
+                        A IA vai analisar os nomes e os números anotados à mão nas caixinhas de valor.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => fileInputRef.current?.click()}
+                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: '#ffffff' }}
+                    >
+                      <UploadCloud size={16} /> 📁 Carregar Arquivo de Foto
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={handleAnalyzePhotoWithAI}
+                      disabled={!capturedPhoto || analyzingPhoto}
+                      style={{
+                        flex: 1.2,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        background: '#16a34a',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {analyzingPhoto ? (
+                        <>
+                          <RefreshCw size={16} className="animate-spin" /> Analisando Folha...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={16} /> ✨ Analisar Folha com IA
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Manual Add Quick Fallback */}
                 <div style={{ position: 'relative' }}>
                   <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="Digite nome ou matrícula do aluno..."
+                    placeholder="Adicionar aluno manualmente se faltar alguém..."
+                    value={manualSearch}
+                    onChange={(e) => setManualSearch(e.target.value)}
+                    style={{ paddingLeft: '2.2rem', fontSize: '0.85rem' }}
+                  />
+                  {filteredStudentsForManualAdd.length > 0 && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        right: 0,
+                        zIndex: 20,
+                        background: 'var(--bg-card, #ffffff)',
+                        border: '1px solid var(--border-color, #e2e8f0)',
+                        borderRadius: '8px',
+                        marginTop: '4px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                        maxHeight: '180px',
+                        overflowY: 'auto',
+                      }}
+                    >
+                      {filteredStudentsForManualAdd.map((s) => (
+                        <div
+                          key={s.student_id}
+                          onClick={() => {
+                            addStudentToBatch(s);
+                            setManualSearch('');
+                          }}
+                          style={{
+                            padding: '0.5rem 0.85rem',
+                            borderBottom: '1px solid var(--border-color, #f1f5f9)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            fontSize: '0.82rem',
+                          }}
+                        >
+                          <span><strong>{s.student_name}</strong> ({s.grade || 'Geral'})</span>
+                          <Plus size={14} color="#16a34a" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Mode 2: Continuous QR Code Scanner (1 by 1) */
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) 1fr', gap: '1.25rem' }}>
+              <div
+                style={{
+                  position: 'relative',
+                  background: '#0f172a',
+                  borderRadius: '12px',
+                  overflow: 'hidden',
+                  aspectRatio: '4/3',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: '2px solid #334155',
+                }}
+              >
+                <video
+                  ref={videoRef}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  muted
+                  playsInline
+                />
+                <div
+                  style={{
+                    position: 'absolute',
+                    width: '180px',
+                    height: '180px',
+                    border: '2px dashed #22c55e',
+                    borderRadius: '16px',
+                    boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.45)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <div style={{ width: '12px', height: '12px', background: '#22c55e', borderRadius: '50%' }} />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', justifyContent: 'space-between' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '0.75rem', borderRadius: '12px' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#166534', fontWeight: 600 }}>Alunos Escaneados</span>
+                    <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#15803d', marginTop: '2px' }}>
+                      {scannedItems.length}
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '0.75rem', borderRadius: '12px' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#1e40af', fontWeight: 600 }}>Total Folha</span>
+                    <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#1d4ed8', marginTop: '2px' }}>
+                      {formatCurrency(grandTotalBatch)}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ position: 'relative' }}>
+                  <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Adicionar aluno manualmente..."
                     value={manualSearch}
                     onChange={(e) => setManualSearch(e.target.value)}
                     style={{ paddingLeft: '2.2rem', fontSize: '0.85rem' }}
                   />
                 </div>
-
-                {/* Autocomplete list */}
-                {filteredStudentsForManualAdd.length > 0 && (
-                  <div
-                    style={{
-                      background: 'var(--bg-card, #ffffff)',
-                      border: '1px solid var(--border-color, #e2e8f0)',
-                      borderRadius: '8px',
-                      marginTop: '0.4rem',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                      maxHeight: '240px',
-                      overflowY: 'auto',
-                    }}
-                  >
-                    {filteredStudentsForManualAdd.map((s) => (
-                      <div
-                        key={s.student_id}
-                        onClick={() => {
-                          addStudentToBatch(s);
-                          setManualSearch('');
-                        }}
-                        style={{
-                          padding: '0.6rem 0.85rem',
-                          borderBottom: '1px solid var(--border-color, #f1f5f9)',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          fontSize: '0.85rem',
-                        }}
-                        className="hover:bg-slate-100"
-                      >
-                        <div>
-                          <strong>{s.student_name}</strong>
-                          <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: '6px' }}>
-                            ({s.grade || 'Geral'})
-                          </span>
-                        </div>
-                        <Plus size={16} color="#16a34a" />
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
-          </div>
+          )}
 
           {/* Scanned Batch Table */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-              <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                Lista de Consumo Escaneado ({scannedItems.length})
-              </h4>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                  Lista de Consumo Identificado ({scannedItems.length})
+                </h4>
+                {scannedItems.length > 0 && (
+                  <span style={{ fontSize: '0.82rem', color: '#16a34a', fontWeight: 700 }}>
+                    • Total: {formatCurrency(grandTotalBatch)}
+                  </span>
+                )}
+              </div>
               {scannedItems.length > 0 && (
                 <button
                   type="button"
@@ -578,9 +974,9 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
                 }}
               >
                 <Camera size={36} style={{ margin: '0 auto 0.5rem auto', color: '#94a3b8' }} />
-                <strong>Nenhum consumo escaneado ainda.</strong>
+                <strong>Nenhum consumo carregado ainda.</strong>
                 <p style={{ fontSize: '0.82rem', margin: '4px 0 0 0' }}>
-                  Aponte a câmera para os QR Codes da folha impressa ou adicione alunos manualmente acima.
+                  Tire uma foto da folha A4 acima ou use a câmera para identificar os consumos.
                 </p>
               </div>
             ) : (
@@ -607,7 +1003,14 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
                           {scannedItems.length - idx}
                         </td>
                         <td style={{ padding: '10px 14px' }}>
-                          <strong style={{ color: 'var(--text-main)' }}>{item.studentName}</strong>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <strong style={{ color: 'var(--text-main)' }}>{item.studentName}</strong>
+                            {item.confidence === 'high' && (
+                              <span style={{ fontSize: '0.68rem', background: '#dcfce7', color: '#15803d', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>
+                                IA 100%
+                              </span>
+                            )}
+                          </div>
                           <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                             {item.grade ? `Série/Turma: ${item.grade}` : ''}
                             {item.enrollmentNumber ? ` • Matrícula: ${item.enrollmentNumber}` : ''}

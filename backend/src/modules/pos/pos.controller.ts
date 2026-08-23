@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { posService } from './pos.service';
+import { visionService } from './vision.service';
+import { backupService } from '../../shared/services/backup.service';
 
 export class PosController {
   // ---- Cash Register ----
@@ -185,6 +187,32 @@ export class PosController {
         req.body
       );
       res.json({ success: true, data: result });
+    } catch (error) { next(error); }
+  }
+
+  async scanSheet(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { imageBase64, apiKey } = req.body;
+      const result = await visionService.processSheetImage(
+        req.user!.schoolId,
+        imageBase64,
+        apiKey
+      );
+      res.json({ success: true, data: result });
+    } catch (error) { next(error); }
+  }
+
+  async triggerBackup(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await backupService.performBackup();
+      res.json({ success: true, data: result });
+    } catch (error) { next(error); }
+  }
+
+  async getBackups(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const backups = backupService.getBackupsList();
+      res.json({ success: true, data: { backups } });
     } catch (error) { next(error); }
   }
 }

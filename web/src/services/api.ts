@@ -131,6 +131,12 @@ export const posApi = {
     api.put(`/pos/on-credit/transactions/${transactionId}`, data),
   deleteOnCreditTransaction: (transactionId: string) =>
     api.delete(`/pos/on-credit/transactions/${transactionId}`),
+  scanSheetImage: (data: { imageBase64: string; apiKey?: string }) =>
+    api.post('/pos/on-credit/scan-sheet', data),
+  triggerBackup: () =>
+    api.post('/pos/backup/run'),
+  getBackups: () =>
+    api.get('/pos/backup/list'),
 };
 
 

@@ -227,6 +227,9 @@
 .transactions-list {
   display: flex;
   flex-direction: column;
+  max-height: calc(100vh - 280px);
+  overflow-y: auto;
+  padding-right: 0.35rem;
 }
 
 .tx-history {
@@ -601,6 +604,34 @@
   color: #ffffff !important;
   border: 1px solid #475569 !important;
   font-weight: 700 !important;
+}
+
+/* Item preenchido — destaque verde */
+.batch-checklist-item.filled {
+  border-color: #16a34a !important;
+  background: rgba(22, 163, 74, 0.12) !important;
+}
+
+.batch-checklist-item.filled .batch-student-name {
+  color: #4ade80 !important;
+}
+
+/* Badge circular com número de ordem de preenchimento */
+.batch-fill-order-badge {
+  min-width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #16a34a;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+  cursor: default;
+  user-select: none;
 }
 
 /* Crediario App Theme & Navigation Bar */

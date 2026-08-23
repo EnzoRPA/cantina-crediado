@@ -17,6 +17,7 @@ interface DebtStudent {
   enrollment_number: string;
   total_debt: number;
   last_purchase_at: string;
+  last_purchase_amount?: number;
   balance?: number;
   billing_type?: 'pix_direto' | 'crediario';
 }
@@ -176,8 +177,10 @@ export default function OnCreditPage() {
     yesterday_amount: number;
     selected: boolean;
     amountInput: string;
+    filledOrder?: number; // ordem em que o valor foi preenchido (undefined = não preenchido ainda)
   }
   const [batchConsumers, setBatchConsumers] = useState<BatchConsumerItem[]>([]);
+  const batchFillCounterRef = useRef(0); // contador global de ordem de preenchimento
 
   const loadBatchConsumers = async (startDate: string, endDate: string, defaultPrice: string) => {
     setLoadingBatchConsumers(true);
@@ -228,6 +231,7 @@ export default function OnCreditPage() {
     setBatchDefaultPrice('10');
     setBatchDescription('Consumo diário (Ficha a Prazo)');
     setBatchSearch('');
+    batchFillCounterRef.current = 0;
     setIsBatchModalOpen(true);
     loadBatchConsumers(yesterday, yesterday, '10');
   };
@@ -244,14 +248,25 @@ export default function OnCreditPage() {
 
   const handleToggleConsumer = (studentId: string) => {
     setBatchConsumers((prev) =>
-      prev.map((c) => (c.student_id === studentId ? { ...c, selected: !c.selected } : c))
+      prev.map((c) =>
+        c.student_id === studentId
+          ? { ...c, selected: !c.selected, filledOrder: c.selected ? undefined : c.filledOrder }
+          : c
+      )
     );
   };
 
   const handleConsumerAmountChange = (studentId: string, val: string) => {
-    setBatchConsumers((prev) =>
-      prev.map((c) => (c.student_id === studentId ? { ...c, amountInput: val } : c))
-    );
+    setBatchConsumers((prev) => {
+      const item = prev.find((c) => c.student_id === studentId);
+      // Atribui ordem de preenchimento na primeira vez que o usuário edita o campo
+      const needsOrder = item && item.filledOrder === undefined;
+      if (needsOrder) batchFillCounterRef.current += 1;
+      const order = needsOrder ? batchFillCounterRef.current : item?.filledOrder;
+      return prev.map((c) =>
+        c.student_id === studentId ? { ...c, amountInput: val, filledOrder: order } : c
+      );
+    });
   };
 
   const handleSaveBatchOnCredit = async (e: React.FormEvent) => {
@@ -318,15 +333,26 @@ export default function OnCreditPage() {
     }
   };
 
-  const filteredBatchConsumers = batchConsumers.filter((c) => {
-    if (!batchSearch.trim()) return true;
-    const term = batchSearch.toLowerCase().trim();
-    return (
-      c.student_name.toLowerCase().includes(term) ||
-      c.grade.toLowerCase().includes(term) ||
-      c.enrollment_number.toLowerCase().includes(term)
-    );
-  });
+  const filteredBatchConsumers = batchConsumers
+    .filter((c) => {
+      if (!batchSearch.trim()) return true;
+      const term = batchSearch.toLowerCase().trim();
+      return (
+        c.student_name.toLowerCase().includes(term) ||
+        c.grade.toLowerCase().includes(term) ||
+        c.enrollment_number.toLowerCase().includes(term)
+      );
+    })
+    .sort((a, b) => {
+      const aFilled = a.filledOrder !== undefined;
+      const bFilled = b.filledOrder !== undefined;
+      // Preenchidos sobem para o topo, ordenados pela ordem de preenchimento
+      if (aFilled && bFilled) return (a.filledOrder as number) - (b.filledOrder as number);
+      if (aFilled) return -1;
+      if (bFilled) return 1;
+      // Não preenchidos mantêm a ordem original
+      return 0;
+    });
 
   const selectedBatchCount = batchConsumers.filter((c) => c.selected).length;
   const grandTotalBatch = batchConsumers
@@ -1277,6 +1303,17 @@ export default function OnCreditPage() {
                         <span className="debt-student-meta" style={{ color: '#64748b' }}>
                           {d.grade} {d.class_group || 'Turma'} • Matrícula {d.enrollment_number}
                         </span>
+                        {/* Último lançamento — exibido somente quando há busca ativa */}
+                        {search.trim() && d.last_purchase_at && (
+                          <span style={{ fontSize: '0.72rem', color: '#7c3aed', fontWeight: 600, marginTop: '0.1rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                            Último:{' '}
+                            <strong>{new Date(d.last_purchase_at).toLocaleDateString('pt-BR')}</strong>
+                            {d.last_purchase_amount ? (
+                              <> — <strong style={{ color: '#dc2626' }}>{formatCurrency(d.last_purchase_amount)}</strong></>
+                            ) : null}
+                          </span>
+                        )}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         {hasCredit ? (
@@ -1467,7 +1504,52 @@ export default function OnCreditPage() {
 
             {/* Sub-tab 2: Vendas / Consumos (Print 6) */}
             {customerSubTab === 'vendas' && (
-              <div className="transactions-list animate-fadeIn">
+              <div className="animate-fadeIn" style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                {/* Quick Action Top Bar */}
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background: '#f8fafc',
+                    padding: '0.65rem 0.85rem',
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0',
+                    flexWrap: 'wrap',
+                    gap: '0.5rem',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Total Pendente:</span>
+                    <strong style={{ fontSize: '1.15rem', color: '#ef4444' }}>
+                      {formatCurrency(selectedStudent.total_debt)}
+                    </strong>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-recebi"
+                      onClick={() => setIsSettleModalOpen(true)}
+                      style={{ padding: '0.4rem 0.75rem', fontSize: '0.82rem', fontWeight: 700 }}
+                    >
+                      <DollarSign size={15} /> Recebi / Quitar
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-vendi"
+                      onClick={() => {
+                        setIsManualModalOpen(true);
+                        setSelectedManualStudent({ id: selectedStudent.student_id, name: selectedStudent.student_name });
+                      }}
+                      style={{ padding: '0.4rem 0.75rem', fontSize: '0.82rem', fontWeight: 700 }}
+                    >
+                      <Plus size={15} /> + Vendi
+                    </button>
+                  </div>
+                </div>
+
+                <div className="transactions-list">
                 {(() => {
                   const pendingVendas = details.filter(tx => tx.payment_status === 'pending');
                   if (pendingVendas.length === 0) {
@@ -1517,6 +1599,7 @@ export default function OnCreditPage() {
                     </div>
                   ));
                 })()}
+                </div>
               </div>
             )}
 
@@ -1630,7 +1713,9 @@ export default function OnCreditPage() {
 
                   return (
                     <>
-                      {rows}
+                      <div style={{ maxHeight: 'calc(100vh - 380px)', overflowY: 'auto', paddingRight: '4px' }}>
+                        {rows}
+                      </div>
                       {/* Totals footer */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 56px', padding: '0.6rem 0', borderTop: '2px solid #cbd5e1', marginTop: '0.3rem', fontSize: '0.82rem', fontWeight: 800 }}>
                         <span style={{ color: '#0f172a' }}>Total</span>
@@ -2648,18 +2733,25 @@ export default function OnCreditPage() {
                     {filteredBatchConsumers.map((c) => (
                       <div
                         key={c.student_id}
-                        className={`batch-checklist-item ${c.selected ? 'active' : ''}`}
+                        className={`batch-checklist-item ${c.selected ? 'active' : ''} ${c.filledOrder !== undefined ? 'filled' : ''}`}
                       >
-                        <div
-                          className="batch-item-checkbox"
-                          onClick={() => handleToggleConsumer(c.student_id)}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={c.selected}
-                            onChange={() => {}}
-                          />
-                        </div>
+                        {/* Badge de ordem de preenchimento */}
+                        {c.filledOrder !== undefined ? (
+                          <div className="batch-fill-order-badge" title={`${c.filledOrder}º preenchido`}>
+                            {c.filledOrder}
+                          </div>
+                        ) : (
+                          <div
+                            className="batch-item-checkbox"
+                            onClick={() => handleToggleConsumer(c.student_id)}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={c.selected}
+                              onChange={() => {}}
+                            />
+                          </div>
+                        )}
 
                         <div
                           className="batch-item-info"

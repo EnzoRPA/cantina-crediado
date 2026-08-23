@@ -808,6 +808,7 @@ export class PosService {
       )
       .sum('tp.amount as total_debt')
       .max('t.created_at as last_purchase_at')
+      .max('tp.amount as last_purchase_amount')
       .groupBy('s.id', 'u.name', 's.grade', 's.class_group', 's.enrollment_number', 's.balance', 's.billing_type')
       .orderBy('student_name', 'asc');
 
@@ -830,6 +831,28 @@ export class PosService {
       )
       .orderBy('u.name', 'asc');
 
+    // 3. Fetch last on_credit transaction for students without pending debt
+    const lastTxByStudent: Record<string, { last_purchase_at: string; last_purchase_amount: number }> = {};
+    if (creditOrPastStudents.length > 0) {
+      const creditStudentIds = creditOrPastStudents.map((s: any) => s.student_id);
+      const lastTxRows = await db('transaction_payments as tp')
+        .join('transactions as t', 'tp.transaction_id', 't.id')
+        .whereIn('t.student_id', creditStudentIds)
+        .where('tp.payment_method', 'on_credit')
+        .select(
+          't.student_id',
+        )
+        .max('t.created_at as last_purchase_at')
+        .max('tp.amount as last_purchase_amount')
+        .groupBy('t.student_id');
+      for (const row of lastTxRows) {
+        lastTxByStudent[row.student_id] = {
+          last_purchase_at: row.last_purchase_at || '',
+          last_purchase_amount: Number(row.last_purchase_amount || 0),
+        };
+      }
+    }
+
     const mappedPending = pendingDebts.map(d => ({
       student_id: d.student_id,
       student_name: d.student_name,
@@ -839,20 +862,25 @@ export class PosService {
       total_debt: Number(d.total_debt || 0),
       balance: Number(d.balance || 0),
       billing_type: d.billing_type === 'pix_direto' ? 'pix_direto' : (d.billing_type || 'crediario'),
-      last_purchase_at: d.last_purchase_at || ''
+      last_purchase_at: d.last_purchase_at || '',
+      last_purchase_amount: Number(d.last_purchase_amount || 0),
     }));
 
-    const mappedCredit = creditOrPastStudents.map(s => ({
-      student_id: s.student_id,
-      student_name: s.student_name,
-      grade: s.grade || '',
-      class_group: s.class_group || '',
-      enrollment_number: s.enrollment_number || '',
-      total_debt: 0,
-      balance: Number(s.balance || 0),
-      billing_type: s.billing_type === 'crediario' ? 'crediario' : 'pix_direto',
-      last_purchase_at: ''
-    }));
+    const mappedCredit = creditOrPastStudents.map((s: any) => {
+      const lastTx = lastTxByStudent[s.student_id];
+      return {
+        student_id: s.student_id,
+        student_name: s.student_name,
+        grade: s.grade || '',
+        class_group: s.class_group || '',
+        enrollment_number: s.enrollment_number || '',
+        total_debt: 0,
+        balance: Number(s.balance || 0),
+        billing_type: s.billing_type === 'crediario' ? 'crediario' : 'pix_direto',
+        last_purchase_at: lastTx?.last_purchase_at || '',
+        last_purchase_amount: lastTx?.last_purchase_amount || 0,
+      };
+    });
 
     const mappedDebts = [...mappedPending, ...mappedCredit].sort((a, b) => a.student_name.localeCompare(b.student_name));
 

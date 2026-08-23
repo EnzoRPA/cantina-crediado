@@ -45,11 +45,19 @@ async function bootstrap() {
     }
     // ───────────────────────────────────────────────────────────────────
 
-    const server = app.listen(config.port, () => {
+    const server = app.listen(config.port, async () => {
       logger.info(`🚀 Cantina Escolar API running on port ${config.port}`);
       logger.info(`📋 Environment: ${config.env}`);
       logger.info(`🔗 URL: ${config.apiUrl}`);
       logger.info(`❤️  Health: ${config.apiUrl}/api/health`);
+
+      // Iniciar serviço de backup diário
+      try {
+        const { backupService } = await import('./shared/services/backup.service');
+        backupService.startDailySchedule();
+      } catch (backupErr) {
+        logger.warn({ backupErr }, '⚠️ Falha ao inicializar agendador de backup');
+      }
     });
 
     // Graceful shutdown
