@@ -2347,16 +2347,54 @@ export default function OnCreditPage() {
                 <div className="form-group" style={{ position: 'relative' }}>
                   <label style={{ color: 'var(--color-text-primary, #f1f5f9)', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>Cliente (Aluno ou Funcionário) *</label>
                   {selectedManualStudent ? (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--color-bg-input, #1e2130)', padding: '0.625rem 0.85rem', borderRadius: '8px', border: '1px solid var(--color-border, rgba(148, 163, 184, 0.2))' }}>
-                      <div>
-                        <strong style={{ color: 'var(--color-text-primary, #f1f5f9)', fontSize: '0.95rem' }}>{selectedManualStudent.name}</strong>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary, #94a3b8)', marginTop: '2px' }}>
-                          Matrícula/RE: {selectedManualStudent.enrollment_number} {selectedManualStudent.grade ? `• ${selectedManualStudent.grade}` : ''} {selectedManualStudent.type === 'employee' ? '• Funcionário' : '• Aluno'}
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--color-bg-input, #1e2130)', padding: '0.625rem 0.85rem', borderRadius: '8px', border: '1px solid var(--color-border, rgba(148, 163, 184, 0.2))' }}>
+                        <div>
+                          <strong style={{ color: 'var(--color-text-primary, #f1f5f9)', fontSize: '0.95rem' }}>{selectedManualStudent.name}</strong>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary, #94a3b8)', marginTop: '2px' }}>
+                            Matrícula/RE: {selectedManualStudent.enrollment_number} {selectedManualStudent.grade ? `• ${selectedManualStudent.grade}` : ''} {selectedManualStudent.type === 'employee' ? '• Funcionário' : '• Aluno'}
+                          </div>
                         </div>
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSelectedManualStudent(null)}>
+                          Alterar
+                        </button>
                       </div>
-                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSelectedManualStudent(null)}>
-                        Alterar
-                      </button>
+
+                      {(() => {
+                        const existing = debts.find((d) => d.student_id === selectedManualStudent.id);
+                        const totalDebt = existing?.total_debt || 0;
+                        const hasHistory = totalDebt > 0 || !!existing?.last_purchase_at;
+
+                        if (!hasHistory) {
+                          return (
+                            <div style={{ background: 'rgba(234, 179, 8, 0.12)', border: '1px solid rgba(234, 179, 8, 0.35)', padding: '0.6rem 0.85rem', borderRadius: '8px', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.84rem', color: '#facc15' }}>
+                              <span style={{ fontSize: '1rem' }}>🌟</span>
+                              <div>
+                                <strong>Primeira vez no crediário!</strong> Este aluno ainda não possui débitos anteriores registrados no sistema.
+                              </div>
+                            </div>
+                          );
+                        } else if (totalDebt > 0) {
+                          return (
+                            <div style={{ background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.35)', padding: '0.6rem 0.85rem', borderRadius: '8px', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.84rem', color: '#f87171' }}>
+                              <span style={{ fontSize: '1rem' }}>⚠️</span>
+                              <div>
+                                <strong>Já possui débitos pendentes:</strong> Total atual de <strong style={{ color: '#ef4444' }}>{formatCurrency(totalDebt)}</strong>
+                                {existing?.last_purchase_at ? ` (Último consumo: ${new Date(existing.last_purchase_at).toLocaleDateString('pt-BR')})` : ''}.
+                              </div>
+                            </div>
+                          );
+                        } else {
+                          return (
+                            <div style={{ background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.35)', padding: '0.6rem 0.85rem', borderRadius: '8px', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.84rem', color: '#4ade80' }}>
+                              <span style={{ fontSize: '1rem' }}>✅</span>
+                              <div>
+                                <strong>Histórico regular:</strong> Aluno já cadastrado no crediário e sem débitos pendentes.
+                              </div>
+                            </div>
+                          );
+                        }
+                      })()}
                     </div>
                   ) : (
                     <div>

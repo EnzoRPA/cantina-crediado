@@ -28,6 +28,7 @@ interface StudentItem {
   total_debt?: number;
   balance?: number;
   billing_type?: 'pix_direto' | 'crediario';
+  last_purchase_at?: string;
 }
 
 export interface ScannedBatchItem {
@@ -38,6 +39,8 @@ export interface ScannedBatchItem {
   amountInput: string;
   scannedAt: Date;
   confidence?: 'high' | 'medium' | 'low';
+  totalDebt?: number;
+  isFirstTimeCredit?: boolean;
 }
 
 interface CameraQRScannerModalProps {
@@ -255,7 +258,18 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
         return prev;
       }
 
-      showToast(`✅ Aluno ${student.student_name} identificado!`, 'success');
+      const totalDebt = student.total_debt || 0;
+      const hasHistory = totalDebt > 0 || !!student.last_purchase_at;
+      const isFirstTime = !hasHistory;
+
+      if (isFirstTime) {
+        showToast(`🌟 ${student.student_name} está no crediário pela 1ª vez!`, 'info');
+      } else if (totalDebt > 0) {
+        showToast(`⚠️ ${student.student_name} já possui R$ ${totalDebt.toFixed(2)} em débitos.`, 'info');
+      } else {
+        showToast(`✅ Aluno ${student.student_name} identificado!`, 'success');
+      }
+
       const newItem: ScannedBatchItem = {
         studentId: student.student_id,
         studentName: student.student_name,
@@ -263,6 +277,8 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
         enrollmentNumber: student.enrollment_number,
         amountInput: defaultAmount,
         scannedAt: new Date(),
+        totalDebt: totalDebt,
+        isFirstTimeCredit: isFirstTime,
       };
 
       setTimeout(() => {
@@ -334,18 +350,27 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
       playScanBeep(true);
       showToast(`🎉 Sucesso! IA identificou ${items.length} consumos preenchidos na folha!`, 'success');
 
-      // Mapear para a lista de itens
+      // Mapear para a lista de itens cruzando histórico
       setScannedItems((prev) => {
         const existingIds = new Set(prev.map((i) => i.studentId));
-        const newBatch: ScannedBatchItem[] = items.map((extracted: any) => ({
-          studentId: extracted.student_id,
-          studentName: extracted.student_name,
-          grade: extracted.grade,
-          enrollmentNumber: extracted.enrollment_number,
-          amountInput: extracted.amount.toString(),
-          scannedAt: new Date(),
-          confidence: extracted.confidence,
-        }));
+        const newBatch: ScannedBatchItem[] = items.map((extracted: any) => {
+          const matching = allStudents.find((s) => s.student_id === extracted.student_id);
+          const totalDebt = matching?.total_debt || 0;
+          const hasHistory = totalDebt > 0 || !!matching?.last_purchase_at;
+          const isFirstTime = !hasHistory;
+
+          return {
+            studentId: extracted.student_id,
+            studentName: extracted.student_name,
+            grade: extracted.grade,
+            enrollmentNumber: extracted.enrollment_number,
+            amountInput: extracted.amount.toString(),
+            scannedAt: new Date(),
+            confidence: extracted.confidence,
+            totalDebt: totalDebt,
+            isFirstTimeCredit: isFirstTime,
+          };
+        });
 
         // Adicionar apenas os que não existiam ainda ou substituir com os lidos
         const filteredNew = newBatch.filter((item) => !existingIds.has(item.studentId));
@@ -1133,9 +1158,22 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
                               </span>
                             )}
                           </div>
-                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                            {item.grade ? `Série/Turma: ${item.grade}` : ''}
-                            {item.enrollmentNumber ? ` • Matrícula: ${item.enrollmentNumber}` : ''}
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap', marginTop: '2px' }}>
+                            {item.grade ? <span>Série/Turma: {item.grade}</span> : null}
+                            {item.enrollmentNumber ? <span>• Matrícula: {item.enrollmentNumber}</span> : null}
+                            {item.isFirstTimeCredit ? (
+                              <span style={{ fontSize: '0.7rem', background: '#fef3c7', color: '#b45309', padding: '1px 6px', borderRadius: '4px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                🌟 1ª Vez no Crediário
+                              </span>
+                            ) : (item.totalDebt || 0) > 0 ? (
+                              <span style={{ fontSize: '0.7rem', background: '#fee2e2', color: '#dc2626', padding: '1px 6px', borderRadius: '4px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                📋 Débito anterior: {formatCurrency(item.totalDebt || 0)}
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: '0.7rem', background: '#f1f5f9', color: '#475569', padding: '1px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                Histórico OK (R$ 0)
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td style={{ padding: '10px 14px' }}>
