@@ -283,7 +283,7 @@ export default function FiadoScannerPage() {
     try {
       const { data } = await posApi.createBatchManualOnCredit({
         date: new Date().toISOString().split('T')[0],
-        description: 'Consumo diário via Folha QR Code (Câmera)',
+        description: 'Consumo do Aluno',
         items: payloadItems,
       });
 

@@ -64,6 +64,24 @@ function parseMathExpression(expr: string): number {
   return Math.max(0, Math.round(total * 100) / 100);
 }
 
+function formatItemDescription(name?: string, notes?: string): string {
+  const raw = (name || notes || '').trim();
+  if (!raw) return 'Consumo do Aluno';
+  if (
+    /folha\s*qr/i.test(raw) ||
+    /c[aâ]mera/i.test(raw) ||
+    /ficha\s*a\s*prazo/i.test(raw) ||
+    /lan[cç]amento\s*(manual|em\s*lote)/i.test(raw) ||
+    /consumo\s*di[aá]rio/i.test(raw) ||
+    /consumo\s*na\s*cantina/i.test(raw) ||
+    raw.toLowerCase() === 'lançamento' ||
+    raw.toLowerCase() === 'consumo'
+  ) {
+    return 'Consumo do Aluno';
+  }
+  return raw;
+}
+
 const formatCurrency = (val: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
@@ -89,6 +107,7 @@ export default function OnCreditPage() {
   const [filterFiado, setFilterFiado] = useState(true);
   const [filterCredito, setFilterCredito] = useState(true);
   const [filterEmDia, setFilterEmDia] = useState(true);
+  const [filterBillingType, setFilterBillingType] = useState<'all' | 'crediario' | 'pix_direto'>('all');
   const [sortBy, setSortBy] = useState<'preco' | 'nome'>('preco');
   const [sortAsc, setSortAsc] = useState(false); // default: maior débito primeiro
 
@@ -162,7 +181,7 @@ export default function OnCreditPage() {
   const [batchRefStartDate, setBatchRefStartDate] = useState(getYesterdayStr());
   const [batchRefEndDate, setBatchRefEndDate] = useState(getYesterdayStr());
   const [batchLaunchDate, setBatchLaunchDate] = useState(getTodayStr());
-  const [batchDescription, setBatchDescription] = useState('Consumo diário (Ficha a Prazo)');
+  const [batchDescription, setBatchDescription] = useState('Consumo do Aluno');
   const [batchDefaultPrice, setBatchDefaultPrice] = useState('10');
   const [batchSearch, setBatchSearch] = useState('');
   const [loadingBatchConsumers, setLoadingBatchConsumers] = useState(false);
@@ -229,7 +248,7 @@ export default function OnCreditPage() {
     setBatchRefEndDate(yesterday);
     setBatchLaunchDate(today);
     setBatchDefaultPrice('10');
-    setBatchDescription('Consumo diário (Ficha a Prazo)');
+    setBatchDescription('Consumo do Aluno');
     setBatchSearch('');
     batchFillCounterRef.current = 0;
     setIsBatchModalOpen(true);
@@ -294,7 +313,7 @@ export default function OnCreditPage() {
     try {
       const { data } = await posApi.createBatchManualOnCredit({
         date: batchLaunchDate,
-        description: batchDescription.trim() || 'Lançamento em Lote (Ficha a Prazo)',
+        description: batchDescription.trim() || 'Consumo do Aluno',
         items: payloadItems,
       });
 
@@ -317,7 +336,7 @@ export default function OnCreditPage() {
     try {
       const { data } = await posApi.createBatchManualOnCredit({
         date: date || new Date().toISOString().split('T')[0],
-        description: 'Consumo diário via Folha QR Code (Câmera)',
+        description: 'Consumo do Aluno',
         items,
       });
       const count = data?.data?.count || items.length;
@@ -473,38 +492,75 @@ export default function OnCreditPage() {
     setIsEditingPixKey(false);
   };
 
-  const handleSendWhatsApp = () => {
-    if (!selectedStudent) return;
+  const handleSendWhatsApp = async (targetStudent?: DebtStudent) => {
+    const student = targetStudent || selectedStudent;
+    if (!student) return;
 
-    const phone = guardian.guardian_phone?.replace(/\D/g, '') || '';
+    let currentGuardian = guardian;
+    let currentDetails = details;
+
+    if (!selectedStudent || selectedStudent.student_id !== student.student_id) {
+      setSelectedStudent(student);
+      try {
+        const { data } = await api.get(`/pos/on-credit/debts/${student.student_id}`);
+        currentDetails = data.data.transactions || [];
+        currentGuardian = data.data.guardian || { guardian_name: null, guardian_phone: null };
+        setDetails(currentDetails);
+        setGuardian(currentGuardian);
+      } catch (e) {
+        console.error('Error fetching debt details:', e);
+      }
+    }
+
+    const phone = currentGuardian.guardian_phone?.replace(/\D/g, '') || '';
     const formattedPhone = phone.length === 11 ? `55${phone}` : phone;
 
-    const formattedTotal = formatCurrency(selectedStudent.total_debt);
+    const formattedTotal = formatCurrency(student.total_debt);
     const dateToday = new Date().toLocaleDateString('pt-BR');
 
-    const itemsTextList = details.map(tx => {
-      const txDate = new Date(tx.created_at);
-      const dateStr = txDate.toLocaleDateString('pt-BR');
-      const itemsList = tx.items.map(item => `${item.quantity}x ${(item.product_name || '').replace(/Lançamento Manual/gi, 'Consumo na Cantina')}`).join(', ');
-      return `* ${dateStr}: ${itemsList} (${formatCurrency(tx.amount)})`;
-    }).join('\n');
+    const pendingDetails = currentDetails.filter(tx => tx.payment_status === 'pending');
+    const listToUse = pendingDetails.length > 0 ? pendingDetails : currentDetails;
+
+    const itemsTextList = listToUse.length > 0
+      ? listToUse.map(tx => {
+          const txDate = new Date(tx.created_at);
+          const dateStr = txDate.toLocaleDateString('pt-BR');
+          const itemsList = tx.items.map(item => `${item.quantity}x ${formatItemDescription(item.product_name, tx.notes || undefined)}`).join(', ');
+          return `· ${dateStr}: ${itemsList} (${formatCurrency(tx.amount)})`;
+        }).join('\n')
+      : `· ${dateToday}: 1x Consumo do Aluno (${formattedTotal})`;
 
     const formattedCnpj = pixKey === '52803416000141' ? '52.803.416/0001-41' : pixKey;
-    const generatedCopiaCola = generateStaticPix(pixKey, selectedStudent.total_debt, merchantName, merchantCity);
+    const generatedCopiaCola = generateStaticPix(pixKey, student.total_debt, merchantName, merchantCity);
 
     try { navigator.clipboard.writeText(generatedCopiaCola); } catch (_) {}
 
-    const messageText = `Olá, ${guardian.guardian_name || 'Responsável'}! Lembramos que o seu filho(a) *${selectedStudent.student_name}* possui consumo pendente (A Prazo) na cantina no valor total de *${formattedTotal}* (atualizado em ${dateToday}).\n\n*Detalhamento do consumo:*\n${itemsTextList}\n\n*Informações para Pagamento Pix:*\nBeneficiário: ${merchantName}\nBanco: Banco Inter\nChave Pix (CNPJ): ${formattedCnpj}\n\n*Pix Copia e Cola (Valor Fechado: ${formattedTotal}):*\n${generatedCopiaCola}\n\nPor favor, envie o comprovante após a transferência. Obrigado!`;
+    const messageText = `Olá, ${currentGuardian.guardian_name || 'Responsável'}! Lembramos que o seu filho(a) *${student.student_name}* possui consumo pendente (A Prazo) na cantina no valor total de *${formattedTotal}* (atualizado em ${dateToday}).\n\n*Detalhamento do consumo:*\n${itemsTextList}\n\n*Informações para Pagamento Pix:*\nBeneficiário: ${merchantName}\nBanco: Banco Inter\nChave Pix (CNPJ): ${formattedCnpj}\n\n*Pix Copia e Cola (Valor Fechado: ${formattedTotal}):*\n${generatedCopiaCola}\n\nPor favor, envie o comprovante após a transferência. Obrigado!`;
 
     const url = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(messageText)}`;
     window.open(url, '_blank');
   };
 
-  const handleSendPixOnly = () => {
-    if (!selectedStudent) return;
-    const phone = guardian.guardian_phone?.replace(/\D/g, '') || '';
+  const handleSendPixOnly = async (targetStudent?: DebtStudent) => {
+    const student = targetStudent || selectedStudent;
+    if (!student) return;
+
+    let currentGuardian = guardian;
+    if (!selectedStudent || selectedStudent.student_id !== student.student_id) {
+      setSelectedStudent(student);
+      try {
+        const { data } = await api.get(`/pos/on-credit/debts/${student.student_id}`);
+        currentGuardian = data.data.guardian || { guardian_name: null, guardian_phone: null };
+        setDetails(data.data.transactions || []);
+        setGuardian(currentGuardian);
+      } catch (e) {
+        console.error('Error fetching debt details:', e);
+      }
+    }
+
+    const phone = currentGuardian.guardian_phone?.replace(/\D/g, '') || '';
     const formattedPhone = phone.length === 11 ? `55${phone}` : phone;
-    const generatedCopiaCola = generateStaticPix(pixKey, selectedStudent.total_debt, merchantName, merchantCity);
+    const generatedCopiaCola = generateStaticPix(pixKey, student.total_debt, merchantName, merchantCity);
 
     try { navigator.clipboard.writeText(generatedCopiaCola); } catch (_) {}
 
@@ -586,7 +642,7 @@ export default function OnCreditPage() {
         studentId: selectedManualStudent.id,
         amount: amountNum,
         date: manualDate ? new Date(manualDate + 'T12:00:00').toISOString() : undefined,
-        description: manualDescription.trim() || 'Lançamento Manual (Ficha a Prazo)',
+        description: manualDescription.trim() || 'Consumo do Aluno',
       });
       const targetStudent = selectedStudent || {
         student_id: selectedManualStudent.id,
@@ -874,6 +930,11 @@ export default function OnCreditPage() {
       if (hasDiabet && !filterFiado)   return false;
       if (hasCredit && !filterCredito)  return false;
       if (isEmDia   && !filterEmDia)    return false;
+
+      // Billing type filter
+      if (filterBillingType !== 'all') {
+        if ((d.billing_type || 'pix_direto') !== filterBillingType) return false;
+      }
 
       // Search text
       if (!search.trim()) return true;
@@ -1227,6 +1288,22 @@ export default function OnCreditPage() {
                       </button>
                     </div>
 
+                    {/* Billing type filter */}
+                    <div style={{ marginBottom: '0.75rem' }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.82rem', color: '#475569', marginBottom: '0.4rem' }}>Tipo de Cobrança</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem' }}>
+                        <button type="button" onClick={() => setFilterBillingType('all')} style={{ padding: '0.45rem 0.5rem', borderRadius: '8px', border: `2px solid ${filterBillingType === 'all' ? '#6366f1' : '#e2e8f0'}`, background: filterBillingType === 'all' ? '#eef2ff' : '#ffffff', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem', color: filterBillingType === 'all' ? '#4f46e5' : '#475569', textAlign: 'center' }}>
+                          Todos
+                        </button>
+                        <button type="button" onClick={() => setFilterBillingType('crediario')} style={{ padding: '0.45rem 0.5rem', borderRadius: '8px', border: `2px solid ${filterBillingType === 'crediario' ? '#16a34a' : '#e2e8f0'}`, background: filterBillingType === 'crediario' ? '#f0fdf4' : '#ffffff', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem', color: filterBillingType === 'crediario' ? '#16a34a' : '#475569', textAlign: 'center' }}>
+                          Crediário
+                        </button>
+                        <button type="button" onClick={() => setFilterBillingType('pix_direto')} style={{ padding: '0.45rem 0.5rem', borderRadius: '8px', border: `2px solid ${filterBillingType === 'pix_direto' ? '#ea580c' : '#e2e8f0'}`, background: filterBillingType === 'pix_direto' ? '#fff7ed' : '#ffffff', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem', color: filterBillingType === 'pix_direto' ? '#ea580c' : '#475569', textAlign: 'center' }}>
+                          Pix Direto
+                        </button>
+                      </div>
+                    </div>
+
                     {/* Sort options */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid #e2e8f0' }}>
                       <button
@@ -1393,18 +1470,29 @@ export default function OnCreditPage() {
                       </div>
                     </div>
 
-                    <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'flex-end' }}>
+                    <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' }}>
                       <button
                         type="button"
                         className="btn btn-sm btn-outline"
                         style={{ borderColor: '#16a34a', color: '#16a34a', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700 }}
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleSelectStudent(d);
-                          handleSendWhatsApp();
+                          handleSendWhatsApp(d);
                         }}
                       >
                         <Send size={14} /> Cobrar via WhatsApp
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', color: '#ffffff', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, borderRadius: '6px' }}
+                        title="Enviar mensagem rápida apenas com o Pix Copia e Cola"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSendPixOnly(d);
+                        }}
+                      >
+                        ⚡ Só Pix (Copia e Cola)
                       </button>
                     </div>
                   </div>
@@ -1593,7 +1681,7 @@ export default function OnCreditPage() {
                       </div>
                       {tx.items.map((item, idx) => (
                         <div key={idx} style={{ fontSize: '0.875rem', marginTop: '0.35rem', fontWeight: 600, color: '#1e293b' }}>
-                          1x {(item.product_name || '').replace(/Lançamento Manual/gi, 'Consumo na Cantina')}
+                          {item.quantity}x {formatItemDescription(item.product_name, tx.notes || undefined)}
                         </div>
                       ))}
                     </div>
@@ -1641,7 +1729,7 @@ export default function OnCreditPage() {
                     totalPagamento += tx.pagamento;
                     const bal = tx.runningBalance;
                     const isNeg = bal < 0;
-                    const desc = (tx.items[0]?.product_name || tx.notes || 'Lançamento').replace(/Lançamento Manual/gi, 'Consumo');
+                    const desc = formatItemDescription(tx.items[0]?.product_name, tx.notes || undefined);
 
                     return (
                       <div key={tx.id} style={{ borderBottom: '1px dashed #e2e8f0', padding: '0.6rem 0' }}>
@@ -1852,8 +1940,17 @@ export default function OnCreditPage() {
 
             {/* Persistent Bottom Action Bar (Prints 5-9) */}
             <div className="customer-detail-bottom-bar">
-              <button type="button" className="btn btn-outline" onClick={handleSendWhatsApp}>
-                <Share2 size={18} /> Extrato
+              <button type="button" className="btn btn-outline" onClick={() => handleSendWhatsApp()}>
+                <Share2 size={18} /> Cobrança WhatsApp
+              </button>
+              <button
+                type="button"
+                className="btn"
+                style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', color: '#ffffff', fontWeight: 700 }}
+                onClick={() => handleSendPixOnly()}
+                title="Enviar mensagem rápida apenas com o Pix Copia e Cola"
+              >
+                ⚡ Só Pix
               </button>
               <button type="button" className="btn btn-recebi" onClick={() => setIsSettleModalOpen(true)}>
                 <DollarSign size={18} /> Recebi
@@ -2699,7 +2796,7 @@ export default function OnCreditPage() {
                       type="text"
                       className="input"
                       style={{ border: '1px solid #cbd5e1', background: '#ffffff', color: '#0f172a', fontWeight: 600, fontSize: '0.95rem' }}
-                      placeholder="Ex: Consumo diário (Ficha a Prazo)"
+                      placeholder="Ex: Consumo do Aluno"
                       value={batchDescription}
                       onChange={(e) => setBatchDescription(e.target.value)}
                     />

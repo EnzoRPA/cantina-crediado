@@ -1035,7 +1035,7 @@ export class PosService {
           unit_price: Number(i.unit_price),
           total_price: Number(i.total_price)
         })) : [{
-          product_name: tx.notes || 'Consumo na Cantina (Ficha a Prazo)',
+          product_name: tx.notes || 'Consumo do Aluno',
           quantity: 1,
           unit_price: Number(tx.final_amount || 0),
           total_price: Number(tx.final_amount || 0)
@@ -1110,7 +1110,7 @@ export class PosService {
   ) {
     return db.transaction(async (trx) => {
       const txCreatedAt = input.date ? new Date(input.date + 'T12:00:00') : new Date();
-      const description = input.description?.trim() || 'Lançamento Manual (Ficha a Prazo)';
+      const description = input.description?.trim() || 'Consumo do Aluno';
       
       const studentIds = input.items.map(i => i.studentId);
       const students = await trx('students as s')
@@ -1462,7 +1462,7 @@ export class PosService {
       const txId = uuidv4();
       const paymentId = uuidv4();
       const itemId = uuidv4();
-      const description = input.description?.trim() || 'Lançamento Manual (Ficha a Prazo)';
+      const description = input.description?.trim() || 'Consumo do Aluno';
 
       // 2. Create transaction record
       await trx('transactions').insert({
