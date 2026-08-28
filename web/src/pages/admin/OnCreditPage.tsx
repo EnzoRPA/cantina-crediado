@@ -168,6 +168,8 @@ export default function OnCreditPage() {
   const [editDescription, setEditDescription] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingTxId, setDeletingTxId] = useState<string | null>(null);
+  const [selectedTxIds, setSelectedTxIds] = useState<Set<string>>(new Set());
+  const [deletingBatch, setDeletingBatch] = useState(false);
 
   // Batch On-Credit State
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
@@ -739,6 +741,30 @@ export default function OnCreditPage() {
 
   void handleOpenEditModal;
   void handleDeleteTransaction;
+
+  const handleBatchDelete = async () => {
+    if (selectedTxIds.size === 0) return;
+    if (!window.confirm(`Tem certeza que deseja apagar ${selectedTxIds.size} lançamento(s)? Esta ação reduzirá o valor pendente.`)) {
+      return;
+    }
+    setDeletingBatch(true);
+    try {
+      for (const txId of selectedTxIds) {
+        await posApi.deleteOnCreditTransaction(txId);
+      }
+      showToast(`${selectedTxIds.size} lançamento(s) apagado(s) com sucesso!`, 'success');
+      setSelectedTxIds(new Set());
+      if (selectedStudent) {
+        handleSelectStudent(selectedStudent);
+      }
+      loadDebts();
+    } catch (err: any) {
+      console.error('Erro ao apagar lançamentos em lote:', err);
+      showToast(err.response?.data?.error?.message || 'Erro ao apagar lançamentos.', 'error');
+    } finally {
+      setDeletingBatch(false);
+    }
+  };
 
   const handleSaveQuickStudent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1639,6 +1665,17 @@ export default function OnCreditPage() {
                   </div>
 
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    {selectedTxIds.size > 0 && (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={handleBatchDelete}
+                        disabled={deletingBatch}
+                        style={{ padding: '0.4rem 0.75rem', fontSize: '0.82rem', fontWeight: 700, background: '#dc2626', color: '#fff', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                      >
+                        <Trash2 size={15} /> Apagar {selectedTxIds.size}
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="btn btn-sm btn-recebi"
@@ -1673,10 +1710,44 @@ export default function OnCreditPage() {
                       </div>
                     );
                   }
-                  return pendingVendas.map(tx => (
-                    <div key={tx.id} className="tx-item-card" style={{ padding: '0.85rem', border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '0.75rem', background: '#ffffff' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-                        <span style={{ fontWeight: 800, fontSize: '1.1rem', color: '#0f172a' }}>{formatCurrency(tx.amount)}</span>
+                  const allSelected = pendingVendas.every(tx => selectedTxIds.has(tx.id));
+                  return (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.6rem', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', marginBottom: '0.5rem', cursor: 'pointer' }} onClick={() => {
+                        if (allSelected) {
+                          setSelectedTxIds(new Set());
+                        } else {
+                          setSelectedTxIds(new Set(pendingVendas.map(tx => tx.id)));
+                        }
+                      }}>
+                        <div style={{ width: 20, height: 20, borderRadius: '4px', border: `2px solid ${allSelected ? '#16a34a' : '#cbd5e1'}`, background: allSelected ? '#16a34a' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.15s' }}>
+                          {allSelected && <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="white" strokeWidth="2" strokeLinecap="round" /></svg>}
+                        </div>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>{allSelected ? 'Desmarcar todos' : `Selecionar todos (${pendingVendas.length})`}</span>
+                      </div>
+                      {pendingVendas.map(tx => {
+                        const isSelected = selectedTxIds.has(tx.id);
+                        return (
+                          <div key={tx.id} className="tx-item-card" style={{ padding: '0.85rem', border: `1px solid ${isSelected ? '#16a34a' : '#e2e8f0'}`, borderRadius: '8px', marginBottom: '0.75rem', background: isSelected ? '#f0fdf4' : '#ffffff', cursor: 'pointer', transition: 'all 0.15s' }} onClick={() => {
+                            setSelectedTxIds(prev => {
+                              const next = new Set(prev);
+                              if (next.has(tx.id)) next.delete(tx.id); else next.add(tx.id);
+                              return next;
+                            });
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <div onClick={(e) => e.stopPropagation()}>
+                                  <input type="checkbox" checked={isSelected} onChange={() => {
+                                    setSelectedTxIds(prev => {
+                                      const next = new Set(prev);
+                                      if (next.has(tx.id)) next.delete(tx.id); else next.add(tx.id);
+                                      return next;
+                                    });
+                                  }} style={{ width: 18, height: 18, accentColor: '#16a34a', cursor: 'pointer' }} />
+                                </div>
+                                <span style={{ fontWeight: 800, fontSize: '1.1rem', color: '#0f172a' }}>{formatCurrency(tx.amount)}</span>
+                              </div>
                         <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
                           <span style={{ background: '#fef9c3', color: '#ca8a04', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700 }}>A Prazo</span>
                           <span style={{ background: '#fee2e2', color: '#dc2626', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700 }}>Pendente</span>
@@ -1708,8 +1779,11 @@ export default function OnCreditPage() {
                           {item.quantity}x {formatItemDescription(item.product_name, tx.notes || undefined)}
                         </div>
                       ))}
-                    </div>
-                  ));
+                      </div>
+                      );
+                      })}
+                    </>
+                  );
                 })()}
                 </div>
               </div>
