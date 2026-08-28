@@ -1450,10 +1450,25 @@ export default function OnCreditPage() {
               <div style={{ background: 'var(--bg-card, #ffffff)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-color, #e2e8f0)', marginBottom: '1rem' }}>
                 <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>Cobre dinheiro e receba mais rápido</h3>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0.2rem 0 0 0' }}>Hoje é: {new Date().toLocaleDateString('pt-BR')}</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem', marginTop: '0.75rem' }}>
+                  <button type="button" onClick={() => setFilterBillingType('all')} style={{ padding: '0.45rem 0.5rem', borderRadius: '8px', border: `2px solid ${filterBillingType === 'all' ? '#6366f1' : '#e2e8f0'}`, background: filterBillingType === 'all' ? '#eef2ff' : '#ffffff', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem', color: filterBillingType === 'all' ? '#4f46e5' : '#475569', textAlign: 'center' }}>
+                    Todos
+                  </button>
+                  <button type="button" onClick={() => setFilterBillingType('crediario')} style={{ padding: '0.45rem 0.5rem', borderRadius: '8px', border: `2px solid ${filterBillingType === 'crediario' ? '#16a34a' : '#e2e8f0'}`, background: filterBillingType === 'crediario' ? '#f0fdf4' : '#ffffff', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem', color: filterBillingType === 'crediario' ? '#16a34a' : '#475569', textAlign: 'center' }}>
+                    Crediário
+                  </button>
+                  <button type="button" onClick={() => setFilterBillingType('pix_direto')} style={{ padding: '0.45rem 0.5rem', borderRadius: '8px', border: `2px solid ${filterBillingType === 'pix_direto' ? '#ea580c' : '#e2e8f0'}`, background: filterBillingType === 'pix_direto' ? '#fff7ed' : '#ffffff', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem', color: filterBillingType === 'pix_direto' ? '#ea580c' : '#475569', textAlign: 'center' }}>
+                    Pix Direto
+                  </button>
+                </div>
               </div>
 
               <div className="debts-cards-grid">
-                {debts.filter(d => d.total_debt > 0).map(d => (
+                {debts.filter(d => {
+                  if (d.total_debt <= 0) return false;
+                  if (filterBillingType !== 'all' && (d.billing_type || 'pix_direto') !== filterBillingType) return false;
+                  return true;
+                }).map(d => (
                   <div key={d.student_id} className="debt-student-card" style={{ flexDirection: 'column', alignItems: 'stretch' }} onClick={() => handleSelectStudent(d)}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -1461,7 +1476,14 @@ export default function OnCreditPage() {
                           {d.student_name.slice(0, 2).toUpperCase()}
                         </div>
                         <div>
-                          <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{d.student_name}</strong>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                            <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{d.student_name}</strong>
+                            {d.billing_type === 'crediario' ? (
+                              <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>📋 Crediário</span>
+                            ) : (
+                              <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}>⚡ Pix Direto</span>
+                            )}
+                          </div>
                           <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{d.grade} {d.class_group}</div>
                         </div>
                       </div>
