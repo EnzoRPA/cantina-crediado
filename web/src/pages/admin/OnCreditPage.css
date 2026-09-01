@@ -118,6 +118,9 @@
   position: sticky;
   top: 1.5rem;
   min-height: 450px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .details-placeholder {
@@ -152,6 +155,9 @@
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .details-header {
@@ -957,10 +963,7 @@
 
 /* Customer Detail Floating Bottom Actions Bar (Prints 5-9) */
 .customer-detail-bottom-bar {
-  position: sticky;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  flex-shrink: 0;
   background: var(--bg-card, #ffffff);
   border-top: 1px solid var(--border-color, #cbd5e1);
   padding: 0.85rem 1rem;
@@ -969,6 +972,7 @@
   z-index: 80;
   box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.06);
   border-radius: 0 0 12px 12px;
+  margin: 1.5rem -1.5rem -1.5rem -1.5rem;
 }
 
 .customer-detail-bottom-bar button {

@@ -2165,6 +2165,7 @@ export default function OnCreditPage() {
                 </button>
               </div>
             )}
+          </div>
 
             {/* Persistent Bottom Action Bar (Prints 5-9) */}
             <div className="customer-detail-bottom-bar">
@@ -2190,7 +2191,6 @@ export default function OnCreditPage() {
                 <Store size={18} /> Vendi
               </button>
             </div>
-          </div>
         </div>
       )}
 
