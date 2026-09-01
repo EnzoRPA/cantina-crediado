@@ -132,6 +132,7 @@ export default function OnCreditPage() {
   const [filterBillingType, setFilterBillingType] = useState<'all' | 'crediario' | 'pix_direto'>('all');
   const [filterChargeStatus, setFilterChargeStatus] = useState<'all' | 'charged' | 'pending'>('all');
   const [chargedTodayVersion, setChargedTodayVersion] = useState(0);
+  const [sortCobrarAsc, setSortCobrarAsc] = useState(false);
   const [sortBy, setSortBy] = useState<'preco' | 'nome'>('preco');
   const [sortAsc, setSortAsc] = useState(false); // default: maior débito primeiro
 
@@ -1514,6 +1515,14 @@ export default function OnCreditPage() {
                 <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>Cobre dinheiro e receba mais rápido</h3>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0.2rem 0 0 0' }}>Hoje é: {new Date().toLocaleDateString('pt-BR')}</p>
 
+                {/* Ordenação por valor */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.65rem' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>Ordenar:</span>
+                  <button type="button" onClick={() => setSortCobrarAsc(!sortCobrarAsc)} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.65rem', borderRadius: '6px', border: '1px solid var(--border-color, #e2e8f0)', background: 'var(--bg-card, #ffffff)', cursor: 'pointer', fontWeight: 600, fontSize: '0.78rem', color: 'var(--text-main)' }}>
+                    {sortCobrarAsc ? '↑ Menor Valor' : '↓ Maior Valor'}
+                  </button>
+                </div>
+
                 {/* Filtro status de cobrança */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem', marginTop: '0.75rem' }}>
                   {([
@@ -1546,7 +1555,7 @@ export default function OnCreditPage() {
                   if (d.total_debt <= 0) return false;
                   if (filterBillingType !== 'all' && (d.billing_type || 'pix_direto') !== filterBillingType) return false;
                   return true;
-                });
+                }).sort((a, b) => sortCobrarAsc ? a.total_debt - b.total_debt : b.total_debt - a.total_debt);
                 const pendingList = cobraveis.filter(d => !isChargedToday(d.student_id));
                 const chargedList = cobraveis.filter(d => isChargedToday(d.student_id));
 
