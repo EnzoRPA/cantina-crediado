@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { 
   Palette, School, ShieldCheck, Check, Users, Search, Eye,
-  Plus, Edit, Power, Trash2, Loader2, RefreshCw, X, Send, MessageSquare, AlertTriangle
+  Plus, Edit, Power, Trash2, Loader2, RefreshCw, X, Send, MessageSquare, AlertTriangle, QrCode, Banknote
 } from 'lucide-react';
 import { usersApi, studentsApi, posApi } from '../../services/api';
 import { formatDateBR } from '../../utils/date';
@@ -117,6 +117,12 @@ export default function SettingsPage() {
   const [schoolAddress, setSchoolAddress] = useState('Rua Principal, 123 - Recife');
   const [savingInfo, setSavingInfo] = useState(false);
 
+  // PIX config state
+  const [pixKey, setPixKey] = useState(localStorage.getItem('cantina-pix-key') || '57fbef81-90eb-4097-9c40-93cdd4320ae4');
+  const [merchantName, setMerchantName] = useState(localStorage.getItem('cantina-merchant-name') || 'POLLYANNA AVELINO VERZARO');
+  const [merchantCity, setMerchantCity] = useState(localStorage.getItem('cantina-merchant-city') || 'IMPERATRIZ');
+  const [savingPix, setSavingPix] = useState(false);
+
   // Users CRUD state
   const [users, setUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
@@ -227,6 +233,17 @@ export default function SettingsPage() {
       setSavingInfo(false);
       alert('Configurações da escola salvas com sucesso!');
     }, 800);
+  };
+
+  const handleSavePixConfig = () => {
+    setSavingPix(true);
+    localStorage.setItem('cantina-pix-key', pixKey);
+    localStorage.setItem('cantina-merchant-name', merchantName);
+    localStorage.setItem('cantina-merchant-city', merchantCity);
+    setTimeout(() => {
+      setSavingPix(false);
+      alert('Configurações PIX salvas com sucesso!');
+    }, 400);
   };
 
   // User actions
@@ -570,6 +587,59 @@ export default function SettingsPage() {
                     </label>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* PIX Config Card */}
+            <div className="settings-card" style={{ marginTop: '1.5rem', marginBottom: '1.5rem' }}>
+              <div className="card-header-with-icon">
+                <QrCode size={20} style={{ color: '#00bfa5' }} />
+                <div>
+                  <h3>Configuração da Chave PIX (Cobranças)</h3>
+                  <p>Configure a chave PIX, nome do beneficiário e cidade utilizados nas mensagens de cobrança via WhatsApp.</p>
+                </div>
+              </div>
+
+              <div className="settings-form-grid" style={{ marginTop: '1.5rem' }}>
+                <div className="form-group">
+                  <label>Chave PIX (CNPJ, CPF, E-mail ou Aleatória)</label>
+                  <input
+                    type="text"
+                    value={pixKey}
+                    onChange={(e) => setPixKey(e.target.value)}
+                    placeholder="Ex: 57fbef81-90eb-4097-9c40-93cdd4320ae4"
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Nome do Beneficiário</label>
+                  <input
+                    type="text"
+                    value={merchantName}
+                    onChange={(e) => setMerchantName(e.target.value)}
+                    placeholder="Ex: POLLYANNA AVELINO VERZARO"
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Cidade</label>
+                  <input
+                    type="text"
+                    value={merchantCity}
+                    onChange={(e) => setMerchantCity(e.target.value)}
+                    placeholder="Ex: IMPERATRIZ"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+                <button type="button" className="btn btn-primary" onClick={handleSavePixConfig} disabled={savingPix} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <Banknote size={16} />
+                  {savingPix ? 'Salvando...' : 'Salvar Config PIX'}
+                </button>
               </div>
             </div>
 

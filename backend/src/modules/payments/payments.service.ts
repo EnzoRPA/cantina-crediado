@@ -212,7 +212,7 @@ export class PaymentsService {
     }
 
     // Normal Pix: generate static Pix with Banco Inter CNPJ key
-    const pixKey = '52803416000141';
+    const pixKey = '57fbef81-90eb-4097-9c40-93cdd4320ae4';
     const beneficiary = 'POLLYANNA AVELINO VERZARO';
     const city = 'IMPERATRIZ';
     const qrCode = generateStaticPix(pixKey, Number(input.amount), beneficiary, city);

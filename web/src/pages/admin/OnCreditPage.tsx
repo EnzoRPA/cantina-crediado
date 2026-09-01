@@ -398,7 +398,7 @@ export default function OnCreditPage() {
   const [loadingDetails, setLoadingDetails] = useState(false);
 
   // Pix key state (saved in localStorage)
-  const [pixKey, setPixKey] = useState(localStorage.getItem('cantina-pix-key') || '52803416000141');
+  const [pixKey, setPixKey] = useState(localStorage.getItem('cantina-pix-key') || '57fbef81-90eb-4097-9c40-93cdd4320ae4');
   const [merchantName, setMerchantName] = useState(localStorage.getItem('cantina-merchant-name') || 'POLLYANNA AVELINO VERZARO');
   const [merchantCity, setMerchantCity] = useState(localStorage.getItem('cantina-merchant-city') || 'IMPERATRIZ');
   const [isEditingPixKey, setIsEditingPixKey] = useState(false);
@@ -532,7 +532,7 @@ export default function OnCreditPage() {
         }).join('\n')
       : `· ${dateToday}: 1x Consumo do Aluno (${formattedTotal})`;
 
-    const formattedCnpj = pixKey === '52803416000141' ? '52.803.416/0001-41' : pixKey;
+    const formattedCnpj = pixKey === '57fbef81-90eb-4097-9c40-93cdd4320ae4' ? '57fbef81-90eb-4097-9c40-93cdd4320ae4' : pixKey;
     const generatedCopiaCola = generateStaticPix(pixKey, student.total_debt, merchantName, merchantCity);
 
     try { navigator.clipboard.writeText(generatedCopiaCola); } catch (_) {}

@@ -158,12 +158,12 @@ export default function SalesPage() {
     
     const itemsText = tx.items?.map(i => `- ${i.quantity}x ${i.product_name} (${formatCurrency(Number(i.total_price))})`).join('\n') || '';
     
-    const savedKey = localStorage.getItem('cantina-pix-key') || '52803416000141';
+    const savedKey = localStorage.getItem('cantina-pix-key') || '57fbef81-90eb-4097-9c40-93cdd4320ae4';
     const savedMerchant = localStorage.getItem('cantina-merchant-name') || 'POLLYANNA AVELINO VERZARO';
     const savedCity = localStorage.getItem('cantina-merchant-city') || 'IMPERATRIZ';
 
     const pixCode = generateStaticPix(savedKey, Number(tx.final_amount), savedMerchant, savedCity);
-    const formattedCnpj = savedKey === '52803416000141' ? '52.803.416/0001-41' : savedKey;
+    const formattedCnpj = savedKey === '57fbef81-90eb-4097-9c40-93cdd4320ae4' ? '57fbef81-90eb-4097-9c40-93cdd4320ae4' : savedKey;
 
     const txDate = tx.created_at ? new Date(tx.created_at) : new Date();
     const formattedDate = txDate.toLocaleDateString('pt-BR');
@@ -182,7 +182,7 @@ export default function SalesPage() {
     const cleanPhone = tx.guardian_phone.replace(/\D/g, '');
     const formattedPhone = cleanPhone.length === 11 ? `55${cleanPhone}` : cleanPhone;
 
-    const savedKey = localStorage.getItem('cantina-pix-key') || '52803416000141';
+    const savedKey = localStorage.getItem('cantina-pix-key') || '57fbef81-90eb-4097-9c40-93cdd4320ae4';
     const savedMerchant = localStorage.getItem('cantina-merchant-name') || 'POLLYANNA AVELINO VERZARO';
     const savedCity = localStorage.getItem('cantina-merchant-city') || 'IMPERATRIZ';
 

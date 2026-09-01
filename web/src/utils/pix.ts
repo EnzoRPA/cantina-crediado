@@ -13,7 +13,7 @@ function calculateCRC16(payload: string): string {
 }
 
 export function generateStaticPix(
-  key: string = '52803416000141',
+  key: string = '57fbef81-90eb-4097-9c40-93cdd4320ae4',
   amount: number = 0,
   merchantName: string = 'POLLYANNA AVELINO VERZARO',
   merchantCity: string = 'IMPERATRIZ'
@@ -36,8 +36,8 @@ export function generateStaticPix(
   return payload + calculateCRC16(payload);
 }
 
-export const DEFAULT_PIX_KEY = '52803416000141';
-export const DEFAULT_PIX_CNPJ_FORMATTED = '52.803.416/0001-41';
+export const DEFAULT_PIX_KEY = '57fbef81-90eb-4097-9c40-93cdd4320ae4';
+export const DEFAULT_PIX_CNPJ_FORMATTED = '57fbef81-90eb-4097-9c40-93cdd4320ae4';
 export const DEFAULT_MERCHANT_NAME = 'POLLYANNA AVELINO VERZARO';
 export const DEFAULT_MERCHANT_CITY = 'IMPERATRIZ';
 export const DEFAULT_BANK_NAME = 'Banco Inter';
