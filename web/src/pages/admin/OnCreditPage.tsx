@@ -551,9 +551,13 @@ export default function OnCreditPage() {
       const { data } = await api.get(`/pos/on-credit/debts/${student.student_id}`);
       currentDetails = data.data.transactions || [];
       currentGuardian = data.data.guardian || { guardian_name: null, guardian_phone: null };
-      currentTotalDebt = currentDetails
-        .filter((tx: any) => !tx.is_payment && tx.payment_status === 'pending')
+      const totalFiado = currentDetails
+        .filter((tx: any) => !tx.is_payment)
         .reduce((sum: number, tx: any) => sum + Number(tx.amount || 0), 0);
+      const totalPagamento = currentDetails
+        .filter((tx: any) => tx.is_payment)
+        .reduce((sum: number, tx: any) => sum + Number(tx.amount || 0), 0);
+      currentTotalDebt = Math.max(0, totalFiado - totalPagamento);
       setDetails(currentDetails);
       setGuardian(currentGuardian);
     } catch (e) {
@@ -605,9 +609,13 @@ export default function OnCreditPage() {
       const { data } = await api.get(`/pos/on-credit/debts/${student.student_id}`);
       const currentDetails = data.data.transactions || [];
       currentGuardian = data.data.guardian || { guardian_name: null, guardian_phone: null };
-      currentTotalDebt = currentDetails
-        .filter((tx: any) => !tx.is_payment && tx.payment_status === 'pending')
+      const totalFiado = currentDetails
+        .filter((tx: any) => !tx.is_payment)
         .reduce((sum: number, tx: any) => sum + Number(tx.amount || 0), 0);
+      const totalPagamento = currentDetails
+        .filter((tx: any) => tx.is_payment)
+        .reduce((sum: number, tx: any) => sum + Number(tx.amount || 0), 0);
+      currentTotalDebt = Math.max(0, totalFiado - totalPagamento);
       setDetails(currentDetails);
       setGuardian(currentGuardian);
     } catch (e) {
