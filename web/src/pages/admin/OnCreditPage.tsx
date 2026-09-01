@@ -498,26 +498,29 @@ export default function OnCreditPage() {
     const student = targetStudent || selectedStudent;
     if (!student) return;
 
+    setSelectedStudent(student);
+
     let currentGuardian = guardian;
     let currentDetails = details;
+    let currentTotalDebt = student.total_debt;
 
-    if (!selectedStudent || selectedStudent.student_id !== student.student_id) {
-      setSelectedStudent(student);
-      try {
-        const { data } = await api.get(`/pos/on-credit/debts/${student.student_id}`);
-        currentDetails = data.data.transactions || [];
-        currentGuardian = data.data.guardian || { guardian_name: null, guardian_phone: null };
-        setDetails(currentDetails);
-        setGuardian(currentGuardian);
-      } catch (e) {
-        console.error('Error fetching debt details:', e);
-      }
+    try {
+      const { data } = await api.get(`/pos/on-credit/debts/${student.student_id}`);
+      currentDetails = data.data.transactions || [];
+      currentGuardian = data.data.guardian || { guardian_name: null, guardian_phone: null };
+      currentTotalDebt = currentDetails
+        .filter((tx: any) => !tx.is_payment && tx.payment_status === 'pending')
+        .reduce((sum: number, tx: any) => sum + Number(tx.amount || 0), 0);
+      setDetails(currentDetails);
+      setGuardian(currentGuardian);
+    } catch (e) {
+      console.error('Error fetching debt details:', e);
     }
 
     const phone = currentGuardian.guardian_phone?.replace(/\D/g, '') || '';
     const formattedPhone = phone.length === 11 ? `55${phone}` : phone;
 
-    const formattedTotal = formatCurrency(student.total_debt);
+    const formattedTotal = formatCurrency(currentTotalDebt);
     const dateToday = new Date().toLocaleDateString('pt-BR');
 
     const pendingDetails = currentDetails.filter(tx => tx.payment_status === 'pending');
@@ -533,7 +536,7 @@ export default function OnCreditPage() {
       : `· ${dateToday}: 1x Consumo do Aluno (${formattedTotal})`;
 
     const formattedCnpj = pixKey === '57fbef81-90eb-4097-9c40-93cdd4320ae4' ? '57fbef81-90eb-4097-9c40-93cdd4320ae4' : pixKey;
-    const generatedCopiaCola = generateStaticPix(pixKey, student.total_debt, merchantName, merchantCity);
+    const generatedCopiaCola = generateStaticPix(pixKey, currentTotalDebt, merchantName, merchantCity);
 
     try { navigator.clipboard.writeText(generatedCopiaCola); } catch (_) {}
 
@@ -549,22 +552,27 @@ export default function OnCreditPage() {
     const student = targetStudent || selectedStudent;
     if (!student) return;
 
+    setSelectedStudent(student);
+
     let currentGuardian = guardian;
-    if (!selectedStudent || selectedStudent.student_id !== student.student_id) {
-      setSelectedStudent(student);
-      try {
-        const { data } = await api.get(`/pos/on-credit/debts/${student.student_id}`);
-        currentGuardian = data.data.guardian || { guardian_name: null, guardian_phone: null };
-        setDetails(data.data.transactions || []);
-        setGuardian(currentGuardian);
-      } catch (e) {
-        console.error('Error fetching debt details:', e);
-      }
+    let currentTotalDebt = student.total_debt;
+
+    try {
+      const { data } = await api.get(`/pos/on-credit/debts/${student.student_id}`);
+      const currentDetails = data.data.transactions || [];
+      currentGuardian = data.data.guardian || { guardian_name: null, guardian_phone: null };
+      currentTotalDebt = currentDetails
+        .filter((tx: any) => !tx.is_payment && tx.payment_status === 'pending')
+        .reduce((sum: number, tx: any) => sum + Number(tx.amount || 0), 0);
+      setDetails(currentDetails);
+      setGuardian(currentGuardian);
+    } catch (e) {
+      console.error('Error fetching debt details:', e);
     }
 
     const phone = currentGuardian.guardian_phone?.replace(/\D/g, '') || '';
     const formattedPhone = phone.length === 11 ? `55${phone}` : phone;
-    const generatedCopiaCola = generateStaticPix(pixKey, student.total_debt, merchantName, merchantCity);
+    const generatedCopiaCola = generateStaticPix(pixKey, currentTotalDebt, merchantName, merchantCity);
 
     try { navigator.clipboard.writeText(generatedCopiaCola); } catch (_) {}
 
