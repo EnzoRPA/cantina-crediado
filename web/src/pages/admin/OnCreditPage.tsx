@@ -1696,6 +1696,11 @@ export default function OnCreditPage() {
                 <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: '#0f172a' }}>
                   {selectedStudent.student_name}
                 </h2>
+                {(selectedStudent.grade || selectedStudent.class_group) && (
+                  <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '12px', background: '#f1f5f9', color: '#475569', fontWeight: 600 }}>
+                    {selectedStudent.grade} {selectedStudent.class_group ? `- ${selectedStudent.class_group}` : ''}
+                  </span>
+                )}
                 {selectedStudent.billing_type === 'crediario' ? (
                   <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '12px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>📋 Crediário</span>
                 ) : (
