@@ -1509,7 +1509,7 @@ export default function OnCreditPage() {
 
           {/* TAB 3: COBRAR A PRAZO (Print 4) */}
           {mainTab === 'cobrar' && (
-            <div className="animate-fadeIn">
+            <div key={chargedTodayVersion} className="animate-fadeIn">
               <div style={{ background: 'var(--bg-card, #ffffff)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-color, #e2e8f0)', marginBottom: '1rem' }}>
                 <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>Cobre dinheiro e receba mais rápido</h3>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0.2rem 0 0 0' }}>Hoje é: {new Date().toLocaleDateString('pt-BR')}</p>
