@@ -406,12 +406,22 @@ export default function OnCreditPage() {
     .reduce((sum, c) => sum + parseMathExpression(c.amountInput), 0);
 
   const manualSearchInputRef = useRef<HTMLInputElement>(null);
+  const manualAmountRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isManualModalOpen && !selectedManualStudent) {
       const timer = setTimeout(() => {
         manualSearchInputRef.current?.focus();
       }, 80);
+      return () => clearTimeout(timer);
+    }
+  }, [isManualModalOpen, selectedManualStudent]);
+
+  useEffect(() => {
+    if (isManualModalOpen && selectedManualStudent) {
+      const timer = setTimeout(() => {
+        manualAmountRef.current?.focus();
+      }, 100);
       return () => clearTimeout(timer);
     }
   }, [isManualModalOpen, selectedManualStudent]);
@@ -2536,6 +2546,7 @@ export default function OnCreditPage() {
                   <input
                     type="text"
                     className="input"
+                    autoFocus
                     placeholder={`Total: R$ ${selectedStudent.total_debt.toFixed(2)} (ou ex: 20+15)`}
                     value={settleAmount}
                     onChange={(e) => setSettleAmount(e.target.value)}
@@ -2765,6 +2776,7 @@ export default function OnCreditPage() {
                   <div className="form-group">
                     <label style={{ color: 'var(--color-text-primary, #f1f5f9)', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>Valor da Ficha / Consumo (R$) *</label>
                     <input
+                      ref={manualAmountRef}
                       type="text"
                       required
                       className="input"
