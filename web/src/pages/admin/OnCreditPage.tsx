@@ -560,14 +560,13 @@ export default function OnCreditPage() {
         }).join('\n')
       : `· ${dateToday}: 1x Consumo do Aluno (${formattedTotal})`;
 
-    const formattedCnpj = pixKey === '57fbef81-90eb-4097-9c40-93cdd4320ae4' ? '57fbef81-90eb-4097-9c40-93cdd4320ae4' : pixKey;
     const generatedCopiaCola = generateStaticPix(pixKey, currentTotalDebt, merchantName, merchantCity);
 
     try { navigator.clipboard.writeText(generatedCopiaCola); } catch (_) {}
 
     const studentGrade = student.grade ? `${student.grade} - ${student.class_group || ''}`.trim() : student.class_group || '';
 
-    const messageText = `Olá, ${currentGuardian.guardian_name || 'Responsável'}! Lembramos que o(a) aluno(a) *${student.student_name}*${studentGrade ? ` (${studentGrade})` : ''} possui consumo pendente (A Prazo) na cantina no valor total de *${formattedTotal}* (atualizado em ${dateToday}).\n\n*Detalhamento do consumo:*\n${itemsTextList}\n\n*Informações para Pagamento Pix:*\nBeneficiário: ${merchantName}\nBanco: Banco Inter\nChave Pix (CNPJ): ${formattedCnpj}\n\n*Pix Copia e Cola (Valor Fechado: ${formattedTotal}):*\n${generatedCopiaCola}\n\nPor favor, envie o comprovante após a transferência. Obrigado!`;
+    const messageText = `Olá, ${currentGuardian.guardian_name || 'Responsável'}! Lembramos que o(a) aluno(a) *${student.student_name}*${studentGrade ? ` (${studentGrade})` : ''} possui consumo pendente (A Prazo) na cantina no valor total de *${formattedTotal}* (atualizado em ${dateToday}).\n\n*Detalhamento do consumo:*\n${itemsTextList}\n\n*Informações para Pagamento Pix:*\nBeneficiário: ${merchantName}\nBanco: Banco Inter\n\n*Pix (aleatória) copia e cola:*\n${generatedCopiaCola}\n\nPor favor, envie o comprovante após a transferência. Obrigado!`;
 
     const url = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(messageText)}`;
     window.open(url, '_blank');
