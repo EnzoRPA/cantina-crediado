@@ -96,15 +96,23 @@ function getChargedToday(): Record<string, string> {
 
 function markChargedToday(studentId: string) {
   const map = getChargedToday();
-  const today = new Date().toISOString().split('T')[0];
-  map[studentId] = today;
+  map[studentId] = new Date().toISOString();
   localStorage.setItem(CHARGED_TODAY_KEY, JSON.stringify(map));
 }
 
 function isChargedToday(studentId: string): boolean {
   const map = getChargedToday();
+  const ts = map[studentId];
+  if (!ts) return false;
   const today = new Date().toISOString().split('T')[0];
-  return map[studentId] === today;
+  return ts.startsWith(today);
+}
+
+function getChargedAt(studentId: string): number {
+  const map = getChargedToday();
+  const ts = map[studentId];
+  if (!ts) return 0;
+  try { return new Date(ts).getTime(); } catch { return 0; }
 }
 
 export default function OnCreditPage() {
@@ -1566,7 +1574,7 @@ export default function OnCreditPage() {
                   return true;
                 }).sort((a, b) => sortCobrarAsc ? a.total_debt - b.total_debt : b.total_debt - a.total_debt);
                 const pendingList = cobraveis.filter(d => !isChargedToday(d.student_id));
-                const chargedList = cobraveis.filter(d => isChargedToday(d.student_id));
+                const chargedList = cobraveis.filter(d => isChargedToday(d.student_id)).sort((a, b) => getChargedAt(b.student_id) - getChargedAt(a.student_id));
 
                 const filteredByStatus = filterChargeStatus === 'charged'
                   ? chargedList
