@@ -85,6 +85,28 @@ function formatItemDescription(name?: string, notes?: string): string {
 const formatCurrency = (val: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
+const CHARGED_TODAY_KEY = 'cantina-charged-today';
+
+function getChargedToday(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(CHARGED_TODAY_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function markChargedToday(studentId: string) {
+  const map = getChargedToday();
+  const today = new Date().toISOString().split('T')[0];
+  map[studentId] = today;
+  localStorage.setItem(CHARGED_TODAY_KEY, JSON.stringify(map));
+}
+
+function isChargedToday(studentId: string): boolean {
+  const map = getChargedToday();
+  const today = new Date().toISOString().split('T')[0];
+  return map[studentId] === today;
+}
+
 export default function OnCreditPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
@@ -108,6 +130,8 @@ export default function OnCreditPage() {
   const [filterCredito, setFilterCredito] = useState(true);
   const [filterEmDia, setFilterEmDia] = useState(true);
   const [filterBillingType, setFilterBillingType] = useState<'all' | 'crediario' | 'pix_direto'>('all');
+  const [filterChargeStatus, setFilterChargeStatus] = useState<'all' | 'charged' | 'pending'>('all');
+  const [chargedTodayVersion, setChargedTodayVersion] = useState(0);
   const [sortBy, setSortBy] = useState<'preco' | 'nome'>('preco');
   const [sortAsc, setSortAsc] = useState(false); // default: maior débito primeiro
 
@@ -546,6 +570,8 @@ export default function OnCreditPage() {
 
     const url = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(messageText)}`;
     window.open(url, '_blank');
+    markChargedToday(student.student_id);
+    setChargedTodayVersion(v => v + 1);
   };
 
   const handleSendPixOnly = async (targetStudent?: DebtStudent) => {
@@ -578,6 +604,8 @@ export default function OnCreditPage() {
 
     const url = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(generatedCopiaCola)}`;
     window.open(url, '_blank');
+    markChargedToday(student.student_id);
+    setChargedTodayVersion(v => v + 1);
   };
 
   // Silence unused state warnings for build
@@ -585,7 +613,6 @@ export default function OnCreditPage() {
   void loadingDetails;
   void isEditingPixKey;
   void handleSavePixKey;
-  void handleSendPixOnly;
   void lastUsedDate;
   void selectedMonth;
 
@@ -1486,7 +1513,22 @@ export default function OnCreditPage() {
               <div style={{ background: 'var(--bg-card, #ffffff)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-color, #e2e8f0)', marginBottom: '1rem' }}>
                 <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0 }}>Cobre dinheiro e receba mais rápido</h3>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0.2rem 0 0 0' }}>Hoje é: {new Date().toLocaleDateString('pt-BR')}</p>
+
+                {/* Filtro status de cobrança */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem', marginTop: '0.75rem' }}>
+                  {([
+                    { key: 'all' as const, label: 'Todos', color: '#6366f1', bg: '#eef2ff' },
+                    { key: 'pending' as const, label: 'Não Cobrados', color: '#dc2626', bg: '#fef2f2' },
+                    { key: 'charged' as const, label: 'Já Cobrados', color: '#16a34a', bg: '#f0fdf4' },
+                  ]).map(opt => (
+                    <button key={opt.key} type="button" onClick={() => setFilterChargeStatus(opt.key)} style={{ padding: '0.45rem 0.5rem', borderRadius: '8px', border: `2px solid ${filterChargeStatus === opt.key ? opt.color : '#e2e8f0'}`, background: filterChargeStatus === opt.key ? opt.bg : '#ffffff', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem', color: filterChargeStatus === opt.key ? opt.color : '#475569', textAlign: 'center' }}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Filtro tipo de cobrança */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem', marginTop: '0.5rem' }}>
                   <button type="button" onClick={() => setFilterBillingType('all')} style={{ padding: '0.45rem 0.5rem', borderRadius: '8px', border: `2px solid ${filterBillingType === 'all' ? '#6366f1' : '#e2e8f0'}`, background: filterBillingType === 'all' ? '#eef2ff' : '#ffffff', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem', color: filterBillingType === 'all' ? '#4f46e5' : '#475569', textAlign: 'center' }}>
                     Todos
                   </button>
@@ -1499,63 +1541,130 @@ export default function OnCreditPage() {
                 </div>
               </div>
 
-              <div className="debts-cards-grid">
-                {debts.filter(d => {
+              {(() => {
+                const cobraveis = debts.filter(d => {
                   if (d.total_debt <= 0) return false;
                   if (filterBillingType !== 'all' && (d.billing_type || 'pix_direto') !== filterBillingType) return false;
                   return true;
-                }).map(d => (
-                  <div key={d.student_id} className="debt-student-card" style={{ flexDirection: 'column', alignItems: 'stretch' }} onClick={() => handleSelectStudent(d)}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        <div className="debt-card-avatar" style={{ background: '#fee2e2', color: '#dc2626', fontWeight: 800 }}>
-                          {d.student_name.slice(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                            <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{d.student_name}</strong>
-                            {d.billing_type === 'crediario' ? (
-                              <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>📋 Crediário</span>
-                            ) : (
-                              <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}>⚡ Pix Direto</span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{d.grade} {d.class_group}</div>
-                        </div>
-                      </div>
-                      <div style={{ background: '#fee2e2', color: '#dc2626', fontWeight: 800, padding: '0.3rem 0.6rem', borderRadius: '6px', fontSize: '0.9rem' }}>
-                        {formatCurrency(d.total_debt)}
-                      </div>
-                    </div>
+                });
+                const pendingList = cobraveis.filter(d => !isChargedToday(d.student_id));
+                const chargedList = cobraveis.filter(d => isChargedToday(d.student_id));
 
-                    <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline"
-                        style={{ borderColor: '#16a34a', color: '#16a34a', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700 }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSendWhatsApp(d);
-                        }}
-                      >
-                        <Send size={14} /> Cobrar via WhatsApp
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', color: '#ffffff', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, borderRadius: '6px' }}
-                        title="Enviar mensagem rápida apenas com o Pix Copia e Cola"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSendPixOnly(d);
-                        }}
-                      >
-                        ⚡ Só Pix (Copia e Cola)
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                const filteredByStatus = filterChargeStatus === 'charged'
+                  ? chargedList
+                  : filterChargeStatus === 'pending'
+                    ? pendingList
+                    : cobraveis;
+
+                return (
+                  <>
+                    {/* Pendentes */}
+                    {(filterChargeStatus === 'all' || filterChargeStatus === 'pending') && pendingList.length > 0 && (
+                      <div style={{ marginBottom: '1.25rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.65rem', padding: '0.5rem 0.75rem', background: '#fef2f2', borderRadius: '8px', border: '1px solid #fecaca' }}>
+                          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444' }} />
+                          <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#991b1b' }}>Pendentes de Cobrança</span>
+                          <span style={{ fontSize: '0.75rem', color: '#dc2626', background: '#fee2e2', padding: '1px 6px', borderRadius: '10px', fontWeight: 700 }}>{pendingList.length}</span>
+                        </div>
+                        <div className="debts-cards-grid">
+                          {pendingList.map(d => (
+                            <div key={d.student_id} className="debt-student-card" style={{ flexDirection: 'column', alignItems: 'stretch', borderLeft: '3px solid #ef4444' }} onClick={() => handleSelectStudent(d)}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                  <div className="debt-card-avatar" style={{ background: '#fee2e2', color: '#dc2626', fontWeight: 800 }}>
+                                    {d.student_name.slice(0, 2).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                      <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{d.student_name}</strong>
+                                      {d.billing_type === 'crediario' ? (
+                                        <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>📋 Crediário</span>
+                                      ) : (
+                                        <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}>⚡ Pix Direto</span>
+                                      )}
+                                    </div>
+                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{d.grade} {d.class_group}</div>
+                                  </div>
+                                </div>
+                                <div style={{ background: '#fee2e2', color: '#dc2626', fontWeight: 800, padding: '0.3rem 0.6rem', borderRadius: '6px', fontSize: '0.9rem' }}>
+                                  {formatCurrency(d.total_debt)}
+                                </div>
+                              </div>
+                              <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <button type="button" className="btn btn-sm btn-outline" style={{ borderColor: '#16a34a', color: '#16a34a', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700 }} onClick={(e) => { e.stopPropagation(); handleSendWhatsApp(d); }}>
+                                  <Send size={14} /> Cobrar via WhatsApp
+                                </button>
+                                <button type="button" className="btn btn-sm" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', color: '#ffffff', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, borderRadius: '6px' }} title="Enviar mensagem rápida apenas com o Pix Copia e Cola" onClick={(e) => { e.stopPropagation(); handleSendPixOnly(d); }}>
+                                  ⚡ Só Pix (Copia e Cola)
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Cobrados Hoje */}
+                    {(filterChargeStatus === 'all' || filterChargeStatus === 'charged') && chargedList.length > 0 && (
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.65rem', padding: '0.5rem 0.75rem', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#16a34a' }} />
+                          <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#166534' }}>Cobrados Hoje</span>
+                          <span style={{ fontSize: '0.75rem', color: '#15803d', background: '#dcfce7', padding: '1px 6px', borderRadius: '10px', fontWeight: 700 }}>{chargedList.length}</span>
+                        </div>
+                        <div className="debts-cards-grid">
+                          {chargedList.map(d => (
+                            <div key={d.student_id} className="debt-student-card" style={{ flexDirection: 'column', alignItems: 'stretch', borderLeft: '3px solid #16a34a', opacity: 0.85 }} onClick={() => handleSelectStudent(d)}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                  <div className="debt-card-avatar" style={{ background: '#dcfce7', color: '#16a34a', fontWeight: 800 }}>
+                                    {d.student_name.slice(0, 2).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                      <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{d.student_name}</strong>
+                                      <span style={{ fontSize: '0.6rem', padding: '1px 5px', borderRadius: '4px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>✓ Cobrado Hoje</span>
+                                      {d.billing_type === 'crediario' ? (
+                                        <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>📋 Crediário</span>
+                                      ) : (
+                                        <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}>⚡ Pix Direto</span>
+                                      )}
+                                    </div>
+                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{d.grade} {d.class_group}</div>
+                                  </div>
+                                </div>
+                                <div style={{ background: '#dcfce7', color: '#16a34a', fontWeight: 800, padding: '0.3rem 0.6rem', borderRadius: '6px', fontSize: '0.9rem' }}>
+                                  {formatCurrency(d.total_debt)}
+                                </div>
+                              </div>
+                              <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <button type="button" className="btn btn-sm btn-outline" style={{ borderColor: '#16a34a', color: '#16a34a', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700 }} onClick={(e) => { e.stopPropagation(); handleSendWhatsApp(d); }}>
+                                  <Send size={14} /> Reenviar
+                                </button>
+                                <button type="button" className="btn btn-sm" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', color: '#ffffff', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, borderRadius: '6px' }} onClick={(e) => { e.stopPropagation(); handleSendPixOnly(d); }}>
+                                  ⚡ Só Pix
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {filteredByStatus.length === 0 && (
+                      <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                        <p style={{ fontSize: '0.95rem' }}>
+                          {cobraveis.length === 0
+                            ? 'Nenhum aluno com débito pendente no momento.'
+                            : filterChargeStatus === 'charged'
+                              ? 'Nenhum aluno cobrado ainda hoje.'
+                              : 'Todos os alunos já foram cobrados hoje! 🎉'}
+                        </p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           )}
         </>
