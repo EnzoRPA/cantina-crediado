@@ -633,14 +633,13 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
     const formattedAmount = formatCurrency(parsedAmount);
     const dateParts = launchDate.split('-');
     const formattedDate = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
-    const genderPrefix = item.studentName.endsWith('a') ? 'aluna' : 'aluno';
 
     if (!formattedPhone) {
       showToast(`Por favor informe o telefone (WhatsApp) do responsável para ${item.studentName}.`, 'error');
       return;
     }
 
-    const messageText = `Olá!\n\nO ${genderPrefix} *${item.studentName}* no dia *${formattedDate}* na cantina é: *${formattedAmount}*\n\n*Chave PIX (CNPJ):*\n52803416000141`;
+    const messageText = `Olá!\n\nO consumo do(a) aluno(a) *${item.studentName}* no dia *${formattedDate}* na cantina é: *${formattedAmount}*\n\n*Chave PIX (CNPJ):*\n52803416000141`;
 
     const url = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(messageText)}`;
     window.open(url, '_blank');
@@ -663,8 +662,7 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
     const formattedAmount = formatCurrency(parsedAmount);
     const dateParts = launchDate.split('-');
     const formattedDate = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
-    const genderPrefix = item.studentName.endsWith('a') ? 'aluna' : 'aluno';
-    const messageText = `Olá!\n\nO ${genderPrefix} *${item.studentName}* no dia *${formattedDate}* na cantina é: *${formattedAmount}*\n\n*Chave PIX (CNPJ):*\n52803416000141`;
+    const messageText = `Olá!\n\nO consumo do(a) aluno(a) *${item.studentName}* no dia *${formattedDate}* na cantina é: *${formattedAmount}*\n\n*Chave PIX (CNPJ):*\n52803416000141`;
 
     try {
       navigator.clipboard.writeText(messageText);
