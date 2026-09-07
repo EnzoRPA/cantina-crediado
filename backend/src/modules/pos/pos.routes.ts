@@ -162,6 +162,26 @@ router.post(
   posController.scanSheet.bind(posController)
 );
 
+// ---- Student Aliases (Aprendizado de Grafias da Cantina) ----
+
+router.post(
+  '/on-credit/aliases',
+  roleGuard('admin', 'manager', 'operator'),
+  posController.saveStudentAlias.bind(posController)
+);
+
+router.get(
+  '/on-credit/aliases',
+  roleGuard('admin', 'manager', 'operator'),
+  posController.getStudentAliases.bind(posController)
+);
+
+router.delete(
+  '/on-credit/aliases/:aliasId',
+  roleGuard('admin', 'manager', 'operator'),
+  posController.deleteStudentAlias.bind(posController)
+);
+
 router.post(
   '/backup/run',
   roleGuard('admin'),

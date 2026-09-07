@@ -12,6 +12,10 @@ import {
   UploadCloud,
   KeyRound,
   RotateCcw,
+  AlertTriangle,
+  Check,
+  BookOpen,
+  CheckCircle2,
 } from 'lucide-react';
 import { posApi } from '../../services/api';
 import { showToast } from '../common/Toast';
@@ -41,6 +45,32 @@ export interface ScannedBatchItem {
   confidence?: 'high' | 'medium' | 'low';
   totalDebt?: number;
   isFirstTimeCredit?: boolean;
+}
+
+export interface SuggestedStudent {
+  student_id: string;
+  student_name: string;
+  grade?: string;
+  class_group?: string;
+  enrollment_number?: string;
+  similarity: number;
+}
+
+export interface UnrecognizedSheetItem {
+  temp_id: string;
+  raw_name: string;
+  raw_matricula?: string;
+  raw_amount_text?: string;
+  amount: number;
+  suggested_students: SuggestedStudent[];
+}
+
+interface ItemResolutionState {
+  studentId: string;
+  amount: string;
+  rememberAlias: boolean;
+  searchQuery: string;
+  isSearchOpen: boolean;
 }
 
 interface CameraQRScannerModalProps {
@@ -116,6 +146,11 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
   const [cameraActive, setCameraActive] = useState(false);
   const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
   const [scannedItems, setScannedItems] = useState<ScannedBatchItem[]>([]);
+  const [unrecognizedItems, setUnrecognizedItems] = useState<UnrecognizedSheetItem[]>([]);
+  const [resolutionState, setResolutionState] = useState<{ [tempId: string]: ItemResolutionState }>({});
+  const [showAliasesModal, setShowAliasesModal] = useState(false);
+  const [learnedAliases, setLearnedAliases] = useState<any[]>([]);
+  const [loadingAliases, setLoadingAliases] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [launchDate, setLaunchDate] = useState<string>(getTodayStr());
 
@@ -341,41 +376,66 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
       });
 
       const items = data?.data?.items || [];
+      const unrecognized: UnrecognizedSheetItem[] = data?.data?.unrecognizedItems || [];
 
-      if (items.length === 0) {
+      if (items.length === 0 && unrecognized.length === 0) {
         showToast('Nenhum consumo manuscrito foi identificado nesta foto da folha.', 'info');
         return;
       }
 
       playScanBeep(true);
-      showToast(`🎉 Sucesso! IA identificou ${items.length} consumos preenchidos na folha!`, 'success');
 
-      // Mapear para a lista de itens cruzando histórico
-      setScannedItems((prev) => {
-        const existingIds = new Set(prev.map((i) => i.studentId));
-        const newBatch: ScannedBatchItem[] = items.map((extracted: any) => {
-          const matching = allStudents.find((s) => s.student_id === extracted.student_id);
-          const totalDebt = matching?.total_debt || 0;
-          const hasHistory = totalDebt > 0 || !!matching?.last_purchase_at;
-          const isFirstTime = !hasHistory;
+      // 1. Processar itens reconhecidos diretamente
+      if (items.length > 0) {
+        setScannedItems((prev) => {
+          const existingIds = new Set(prev.map((i) => i.studentId));
+          const newBatch: ScannedBatchItem[] = items.map((extracted: any) => {
+            const matching = allStudents.find((s) => s.student_id === extracted.student_id);
+            const totalDebt = matching?.total_debt || 0;
+            const hasHistory = totalDebt > 0 || !!matching?.last_purchase_at;
+            const isFirstTime = !hasHistory;
 
-          return {
-            studentId: extracted.student_id,
-            studentName: extracted.student_name,
-            grade: extracted.grade,
-            enrollmentNumber: extracted.enrollment_number,
-            amountInput: extracted.amount.toString(),
-            scannedAt: new Date(),
-            confidence: extracted.confidence,
-            totalDebt: totalDebt,
-            isFirstTimeCredit: isFirstTime,
-          };
+            return {
+              studentId: extracted.student_id,
+              studentName: extracted.student_name,
+              grade: extracted.grade,
+              enrollmentNumber: extracted.enrollment_number,
+              amountInput: extracted.amount.toString(),
+              scannedAt: new Date(),
+              confidence: extracted.confidence,
+              totalDebt: totalDebt,
+              isFirstTimeCredit: isFirstTime,
+            };
+          });
+
+          const filteredNew = newBatch.filter((item) => !existingIds.has(item.studentId));
+          return [...filteredNew, ...prev];
         });
+      }
 
-        // Adicionar apenas os que não existiam ainda ou substituir com os lidos
-        const filteredNew = newBatch.filter((item) => !existingIds.has(item.studentId));
-        return [...filteredNew, ...prev];
+      // 2. Processar itens não reconhecidos com pendência
+      setUnrecognizedItems(unrecognized);
+      const initialResolutions: { [tempId: string]: ItemResolutionState } = {};
+      unrecognized.forEach((u) => {
+        const topSug = u.suggested_students && u.suggested_students.length > 0 ? u.suggested_students[0] : null;
+        initialResolutions[u.temp_id] = {
+          studentId: topSug && topSug.similarity >= 0.70 ? topSug.student_id : '',
+          amount: u.amount.toString(),
+          rememberAlias: true,
+          searchQuery: '',
+          isSearchOpen: false,
+        };
       });
+      setResolutionState(initialResolutions);
+
+      if (unrecognized.length > 0) {
+        showToast(
+          `✨ IA identificou ${items.length} consumos diretos e ${unrecognized.length} precisam de confirmação!`,
+          'info'
+        );
+      } else {
+        showToast(`🎉 Sucesso! IA identificou ${items.length} consumos na folha!`, 'success');
+      }
     } catch (err: any) {
       console.error('Erro na análise da folha:', err);
       showToast(
@@ -384,6 +444,103 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
       );
     } finally {
       setAnalyzingPhoto(false);
+    }
+  };
+
+  const handleResolveUnrecognized = async (tempId: string) => {
+    const res = resolutionState[tempId];
+    const item = unrecognizedItems.find((u) => u.temp_id === tempId);
+    if (!res || !item) return;
+
+    if (!res.studentId) {
+      showToast('Selecione a qual aluno pertence este consumo.', 'error');
+      return;
+    }
+
+    const student = allStudents.find((s) => s.student_id === res.studentId);
+    if (!student) {
+      showToast('Aluno selecionado não encontrado.', 'error');
+      return;
+    }
+
+    const parsedAmount = parseMathExpression(res.amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      showToast('Informe um valor válido para o consumo.', 'error');
+      return;
+    }
+
+    // Se marcado para lembrar grafia, salvar na memória da IA
+    if (res.rememberAlias && item.raw_name && item.raw_name !== 'Não identificado') {
+      try {
+        await posApi.saveStudentAlias({
+          studentId: student.student_id,
+          rawAlias: item.raw_name,
+        });
+        showToast(`🧠 Grafia "${item.raw_name}" memorizada para ${student.student_name}!`, 'success');
+      } catch (aliasErr) {
+        console.warn('Erro ao salvar alias do aluno:', aliasErr);
+      }
+    }
+
+    const totalDebt = student.total_debt || 0;
+    const hasHistory = totalDebt > 0 || !!student.last_purchase_at;
+    const isFirstTime = !hasHistory;
+
+    setScannedItems((prev) => [
+      {
+        studentId: student.student_id,
+        studentName: student.student_name,
+        grade: student.grade,
+        enrollmentNumber: student.enrollment_number,
+        amountInput: parsedAmount.toString(),
+        scannedAt: new Date(),
+        confidence: 'medium',
+        totalDebt: totalDebt,
+        isFirstTimeCredit: isFirstTime,
+      },
+      ...prev.filter((i) => i.studentId !== student.student_id),
+    ]);
+
+    setUnrecognizedItems((prev) => prev.filter((u) => u.temp_id !== tempId));
+  };
+
+  const handleDismissUnrecognized = (tempId: string) => {
+    setUnrecognizedItems((prev) => prev.filter((u) => u.temp_id !== tempId));
+    showToast('Consumo pendente descartado.', 'info');
+  };
+
+  const handleQuickSelectSuggestion = (tempId: string, studentId: string) => {
+    setResolutionState((prev) => ({
+      ...prev,
+      [tempId]: {
+        ...(prev[tempId] || { amount: '', rememberAlias: true, searchQuery: '', isSearchOpen: false }),
+        studentId,
+        isSearchOpen: false,
+      },
+    }));
+  };
+
+  const loadLearnedAliases = async () => {
+    setLoadingAliases(true);
+    try {
+      const { data } = await posApi.getStudentAliases();
+      setLearnedAliases(data?.data || []);
+    } catch (err) {
+      console.error('Erro ao carregar grafias aprendidas:', err);
+      showToast('Não foi possível carregar a memória de caligrafia.', 'error');
+    } finally {
+      setLoadingAliases(false);
+    }
+  };
+
+  const handleDeleteLearnedAlias = async (aliasId: string) => {
+    try {
+      await posApi.deleteStudentAlias(aliasId);
+      setLearnedAliases((prev) => prev.filter((a) => a.id !== aliasId));
+      showToast('Grafia removida da memória da IA.', 'success');
+    } catch (err) {
+      console.error('Erro ao excluir alias:', err);
+      showToast('Erro ao remover grafia.', 'error');
     }
   };
 
@@ -539,6 +696,29 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                setShowAliasesModal(true);
+                loadLearnedAliases();
+              }}
+              title="Ver grafias que a IA já aprendeu para esta escola"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                color: '#4f46e5',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                background: '#eef2ff',
+                padding: '4px 8px',
+                borderRadius: '8px',
+                border: '1px solid #c7d2fe',
+              }}
+            >
+              <BookOpen size={15} /> Memória de Grafias
+            </button>
             <button
               type="button"
               className="btn btn-ghost btn-sm"
@@ -1085,6 +1265,335 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
             </div>
           )}
 
+          {/* Unrecognized / Pending Confirmation Items */}
+          {unrecognizedItems.length > 0 && (
+            <div
+              style={{
+                background: '#fffbeb',
+                border: '1.5px solid #fcd34d',
+                borderRadius: '12px',
+                padding: '1.25rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1rem',
+                boxShadow: '0 4px 12px rgba(217, 119, 6, 0.08)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <AlertTriangle size={22} color="#d97706" />
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: '#92400e' }}>
+                      ⚠️ Consumos Anotados na Folha que Precisam de Identificação ({unrecognizedItems.length})
+                    </h4>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: '#b45309' }}>
+                      A IA identificou estes valores preenchidos na folha. Escolha o aluno e marque para memorizar a caligrafia nas próximas leituras!
+                    </p>
+                  </div>
+                </div>
+                <span
+                  style={{
+                    background: '#fef3c7',
+                    color: '#92400e',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    padding: '3px 8px',
+                    borderRadius: '8px',
+                  }}
+                >
+                  {unrecognizedItems.length} {unrecognizedItems.length === 1 ? 'pendência' : 'pendências'}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                {unrecognizedItems.map((uItem) => {
+                  const state = resolutionState[uItem.temp_id] || {
+                    studentId: '',
+                    amount: uItem.amount.toString(),
+                    rememberAlias: true,
+                    searchQuery: '',
+                    isSearchOpen: false,
+                  };
+                  const selectedStudent = allStudents.find((s) => s.student_id === state.studentId);
+
+                  const searchFiltered = allStudents
+                    .filter((s) => {
+                      if (!state.searchQuery.trim()) return false;
+                      const term = normalizeText(state.searchQuery);
+                      const str = normalizeText(`${s.student_name} ${s.grade || ''} ${s.class_group || ''} ${s.enrollment_number || ''}`);
+                      return str.includes(term);
+                    })
+                    .slice(0, 15);
+
+                  return (
+                    <div
+                      key={uItem.temp_id}
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #fed7aa',
+                        borderRadius: '10px',
+                        padding: '1rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.75rem',
+                      }}
+                    >
+                      {/* Top row: anotação e valor */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Anotação na folha:</span>
+                          <strong
+                            style={{
+                              fontSize: '0.95rem',
+                              color: '#0f172a',
+                              background: '#f1f5f9',
+                              padding: '2px 8px',
+                              borderRadius: '6px',
+                              border: '1px solid #cbd5e1',
+                            }}
+                          >
+                            "{uItem.raw_name}"
+                          </strong>
+                          {uItem.raw_matricula && (
+                            <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                              (Matrícula lida: {uItem.raw_matricula})
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#475569' }}>Valor: R$</span>
+                          <input
+                            type="text"
+                            className="form-input"
+                            value={state.amount}
+                            onChange={(e) =>
+                              setResolutionState((prev) => ({
+                                ...prev,
+                                [uItem.temp_id]: { ...state, amount: e.target.value },
+                              }))
+                            }
+                            style={{ width: '85px', fontWeight: 800, color: '#16a34a', padding: '3px 6px', fontSize: '0.95rem' }}
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => handleDismissUnrecognized(uItem.temp_id)}
+                            style={{ color: '#94a3b8', fontSize: '0.78rem', padding: '4px 6px' }}
+                            title="Descartar este consumo"
+                          >
+                            Descartar
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Middle row: Sugestões inteligentes */}
+                      {uItem.suggested_students && uItem.suggested_students.length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#b45309' }}>
+                            ⭐ Sugestões por aproximação:
+                          </span>
+                          {uItem.suggested_students.map((sug) => {
+                            const isChosen = state.studentId === sug.student_id;
+                            return (
+                              <button
+                                key={sug.student_id}
+                                type="button"
+                                onClick={() => handleQuickSelectSuggestion(uItem.temp_id, sug.student_id)}
+                                style={{
+                                  background: isChosen ? '#15803d' : '#fef3c7',
+                                  color: isChosen ? '#ffffff' : '#92400e',
+                                  border: isChosen ? '1px solid #15803d' : '1px solid #fde68a',
+                                  borderRadius: '6px',
+                                  padding: '2px 8px',
+                                  fontSize: '0.76rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  transition: 'all 0.15s ease',
+                                }}
+                              >
+                                {isChosen && <Check size={12} />}
+                                {sug.student_name} {sug.grade ? `(${sug.grade})` : ''}
+                                <span style={{ opacity: 0.8, fontSize: '0.68rem' }}>
+                                  ({Math.round(sug.similarity * 100)}%)
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Search student fallback and Selected Student Display */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '0.75rem', alignItems: 'center' }}>
+                        <div style={{ position: 'relative' }}>
+                          {selectedStudent ? (
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                background: '#f0fdf4',
+                                border: '1px solid #86efac',
+                                borderRadius: '8px',
+                                padding: '4px 10px',
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <CheckCircle2 size={16} color="#16a34a" />
+                                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#166534' }}>
+                                  {selectedStudent.student_name}
+                                </span>
+                                <span style={{ fontSize: '0.76rem', color: '#15803d' }}>
+                                  • {selectedStudent.grade || 'Geral'} {selectedStudent.class_group || ''}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() =>
+                                  setResolutionState((prev) => ({
+                                    ...prev,
+                                    [uItem.temp_id]: { ...state, studentId: '', isSearchOpen: true },
+                                  }))
+                                }
+                                style={{ fontSize: '0.72rem', color: '#64748b', padding: '2px 6px' }}
+                              >
+                                Trocar Aluno
+                              </button>
+                            </div>
+                          ) : (
+                            <div>
+                              <input
+                                type="text"
+                                className="form-input"
+                                placeholder="🔍 Buscar outro aluno na escola pelo nome..."
+                                value={state.searchQuery}
+                                onChange={(e) =>
+                                  setResolutionState((prev) => ({
+                                    ...prev,
+                                    [uItem.temp_id]: { ...state, searchQuery: e.target.value, isSearchOpen: true },
+                                  }))
+                                }
+                                onFocus={() =>
+                                  setResolutionState((prev) => ({
+                                    ...prev,
+                                    [uItem.temp_id]: { ...state, isSearchOpen: true },
+                                  }))
+                                }
+                                style={{ fontSize: '0.82rem', padding: '4px 8px', width: '100%' }}
+                              />
+                              {state.isSearchOpen && searchFiltered.length > 0 && (
+                                <div
+                                  style={{
+                                    position: 'absolute',
+                                    top: '100%',
+                                    left: 0,
+                                    right: 0,
+                                    zIndex: 40,
+                                    background: '#ffffff',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: '8px',
+                                    maxHeight: '180px',
+                                    overflowY: 'auto',
+                                    boxShadow: '0 8px 16px rgba(0,0,0,0.1)',
+                                    marginTop: '2px',
+                                  }}
+                                >
+                                  {searchFiltered.map((st) => (
+                                    <div
+                                      key={st.student_id}
+                                      onClick={() => {
+                                        setResolutionState((prev) => ({
+                                          ...prev,
+                                          [uItem.temp_id]: {
+                                            ...state,
+                                            studentId: st.student_id,
+                                            isSearchOpen: false,
+                                            searchQuery: '',
+                                          },
+                                        }));
+                                      }}
+                                      style={{
+                                        padding: '6px 10px',
+                                        fontSize: '0.82rem',
+                                        cursor: 'pointer',
+                                        borderBottom: '1px solid #f1f5f9',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                      }}
+                                      onMouseEnter={(e) => (e.currentTarget.style.background = '#f8fafc')}
+                                      onMouseLeave={(e) => (e.currentTarget.style.background = '#ffffff')}
+                                    >
+                                      <strong>{st.student_name}</strong>
+                                      <span style={{ color: '#64748b', fontSize: '0.75rem' }}>
+                                        {st.grade || ''} {st.class_group || ''}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          disabled={!state.studentId}
+                          onClick={() => handleResolveUnrecognized(uItem.temp_id)}
+                          style={{
+                            background: '#16a34a',
+                            color: '#ffffff',
+                            fontWeight: 700,
+                            padding: '6px 12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '0.82rem',
+                          }}
+                        >
+                          <Plus size={15} /> Confirmar e Lançar
+                        </button>
+                      </div>
+
+                      {/* Bottom row: Checkbox de memorização de grafia */}
+                      {uItem.raw_name && uItem.raw_name !== 'Não identificado' && (
+                        <label
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontSize: '0.78rem',
+                            color: '#4338ca',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            marginTop: '2px',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={state.rememberAlias}
+                            onChange={(e) =>
+                              setResolutionState((prev) => ({
+                                ...prev,
+                                [uItem.temp_id]: { ...state, rememberAlias: e.target.checked },
+                              }))
+                            }
+                            style={{ cursor: 'pointer' }}
+                          />
+                          🧠 Memorizar que a grafia "{uItem.raw_name}" pertence a este aluno nas próximas listas
+                        </label>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Scanned Batch Table */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
@@ -1268,6 +1777,135 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Modal de Gestão da Memória de Grafias da Cantina */}
+      {showAliasesModal && (
+        <div className="modal-overlay animate-fadeIn" style={{ zIndex: 1250 }}>
+          <div
+            className="modal-content"
+            style={{
+              maxWidth: '650px',
+              width: '90%',
+              maxHeight: '80vh',
+              display: 'flex',
+              flexDirection: 'column',
+              padding: 0,
+              borderRadius: '16px',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                padding: '1rem 1.25rem',
+                background: '#f8fafc',
+                borderBottom: '1px solid #e2e8f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <BookOpen size={20} color="#4f46e5" />
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#1e1b4b' }}>
+                    Memória de Grafias da Cantina
+                  </h3>
+                  <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                    Grafias e caligrafias que a IA já aprendeu para reconhecer automaticamente
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setShowAliasesModal(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
+              {loadingAliases ? (
+                <div style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
+                  <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 0.5rem auto' }} />
+                  Carregando grafias memorizadas...
+                </div>
+              ) : learnedAliases.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2.5rem', color: '#64748b' }}>
+                  <Sparkles size={32} style={{ margin: '0 auto 0.5rem auto', color: '#a5b4fc' }} />
+                  <strong>Nenhuma grafia memorizada ainda.</strong>
+                  <p style={{ fontSize: '0.82rem', margin: '4px 0 0 0' }}>
+                    Conforme você for confirmando os nomes que a IA não reconheceu na folha com o checkbox marcado, eles aparecerão aqui automaticamente!
+                  </p>
+                </div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>
+                      <th style={{ padding: '8px 10px' }}>Grafia / Escrita</th>
+                      <th style={{ padding: '8px 10px' }}>Aluno Vinculado</th>
+                      <th style={{ padding: '8px 10px' }}>Turma</th>
+                      <th style={{ padding: '8px 10px', textAlign: 'center' }}>Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {learnedAliases.map((a) => (
+                      <tr key={a.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '8px 10px' }}>
+                          <span
+                            style={{
+                              background: '#eef2ff',
+                              color: '#3730a3',
+                              padding: '2px 8px',
+                              borderRadius: '6px',
+                              fontWeight: 700,
+                            }}
+                          >
+                            "{a.raw_alias}"
+                          </span>
+                        </td>
+                        <td style={{ padding: '8px 10px', fontWeight: 600 }}>{a.student_name}</td>
+                        <td style={{ padding: '8px 10px', color: '#64748b' }}>
+                          {a.grade || ''} {a.class_group || ''}
+                        </td>
+                        <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => handleDeleteLearnedAlias(a.id)}
+                            style={{ color: '#ef4444', padding: '2px 6px' }}
+                            title="Esquecer esta grafia"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div
+              style={{
+                padding: '0.75rem 1.25rem',
+                background: '#f8fafc',
+                borderTop: '1px solid #e2e8f0',
+                display: 'flex',
+                justifyContent: 'flex-end',
+              }}
+            >
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setShowAliasesModal(false)}
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

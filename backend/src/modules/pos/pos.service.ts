@@ -1602,6 +1602,113 @@ export class PosService {
       return { success: true, transactionId };
     });
   }
+
+  /**
+   * Salva/memoriza uma grafia ou apelido de caligrafia para um aluno da escola.
+   */
+  async saveStudentAlias(
+    schoolId: string,
+    studentId: string,
+    rawAlias: string,
+    source: string = 'vision_learned'
+  ) {
+    const trimmed = (rawAlias || '').trim();
+    if (!trimmed) {
+      throw Errors.badRequest('O texto da grafia não pode ser vazio');
+    }
+
+    const normalized = trimmed
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[º°]/g, '')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!normalized) {
+      throw Errors.badRequest('Grafia inválida');
+    }
+
+    const student = await db('students')
+      .where({ id: studentId, school_id: schoolId })
+      .first();
+
+    if (!student) {
+      throw Errors.notFound('Aluno');
+    }
+
+    const existing = await db('student_aliases')
+      .where({ school_id: schoolId, alias: normalized })
+      .first();
+
+    if (existing) {
+      await db('student_aliases')
+        .where({ id: existing.id })
+        .update({
+          student_id: studentId,
+          raw_alias: trimmed,
+          source,
+          updated_at: new Date(),
+        });
+      return { id: existing.id, alias: normalized, raw_alias: trimmed, student_id: studentId, updated: true };
+    }
+
+    const newId = uuidv4();
+    await db('student_aliases').insert({
+      id: newId,
+      school_id: schoolId,
+      student_id: studentId,
+      alias: normalized,
+      raw_alias: trimmed,
+      source,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    logger.info({ schoolId, studentId, normalized, trimmed }, 'Grafia de aluno aprendida/memorizada com sucesso');
+    return { id: newId, alias: normalized, raw_alias: trimmed, student_id: studentId, created: true };
+  }
+
+  /**
+   * Lista todas as grafias/apelidos aprendidos da escola.
+   */
+  async listStudentAliases(schoolId: string) {
+    const rows = await db('student_aliases as sa')
+      .join('students as s', 'sa.student_id', 's.id')
+      .join('users as u', 's.user_id', 'u.id')
+      .where('sa.school_id', schoolId)
+      .select([
+        'sa.id',
+        'sa.alias',
+        'sa.raw_alias',
+        'sa.source',
+        'sa.created_at',
+        'sa.student_id',
+        'u.name as student_name',
+        's.grade',
+        's.class_group',
+        's.enrollment_number',
+      ])
+      .orderBy('sa.created_at', 'desc');
+
+    return rows;
+  }
+
+  /**
+   * Exclui uma grafia memorizada.
+   */
+  async deleteStudentAlias(schoolId: string, aliasId: string) {
+    const deleted = await db('student_aliases')
+      .where({ id: aliasId, school_id: schoolId })
+      .delete();
+
+    if (!deleted) {
+      throw Errors.notFound('Grafia');
+    }
+
+    return { success: true };
+  }
 }
 
 export const posService = new PosService();

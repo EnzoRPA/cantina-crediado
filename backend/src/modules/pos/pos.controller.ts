@@ -215,6 +215,33 @@ export class PosController {
       res.json({ success: true, data: { backups } });
     } catch (error) { next(error); }
   }
+
+  async saveStudentAlias(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { studentId, rawAlias } = req.body;
+      const result = await posService.saveStudentAlias(
+        req.user!.schoolId,
+        studentId,
+        rawAlias
+      );
+      res.json({ success: true, data: result });
+    } catch (error) { next(error); }
+  }
+
+  async getStudentAliases(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await posService.listStudentAliases(req.user!.schoolId);
+      res.json({ success: true, data: result });
+    } catch (error) { next(error); }
+  }
+
+  async deleteStudentAlias(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { aliasId } = req.params;
+      const result = await posService.deleteStudentAlias(req.user!.schoolId, aliasId);
+      res.json({ success: true, data: result });
+    } catch (error) { next(error); }
+  }
 }
 
 export const posController = new PosController();

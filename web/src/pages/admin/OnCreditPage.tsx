@@ -87,7 +87,12 @@ const formatCurrency = (val: number) =>
 
 const CHARGED_TODAY_KEY = 'cantina-charged-today';
 
-function getChargedToday(): Record<string, string> {
+interface ChargedEntry {
+  chargedAt: string;
+  rechargeDate?: string;
+}
+
+function getChargedToday(): Record<string, ChargedEntry | string> {
   try {
     const raw = localStorage.getItem(CHARGED_TODAY_KEY);
     return raw ? JSON.parse(raw) : {};
@@ -96,23 +101,77 @@ function getChargedToday(): Record<string, string> {
 
 function markChargedToday(studentId: string) {
   const map = getChargedToday();
-  map[studentId] = new Date().toISOString();
+  const existing = map[studentId];
+  if (existing && typeof existing === 'object' && 'chargedAt' in existing) {
+    existing.chargedAt = new Date().toISOString();
+  } else {
+    map[studentId] = { chargedAt: new Date().toISOString() };
+  }
   localStorage.setItem(CHARGED_TODAY_KEY, JSON.stringify(map));
 }
 
 function isChargedToday(studentId: string): boolean {
   const map = getChargedToday();
-  const ts = map[studentId];
-  if (!ts) return false;
+  const entry = map[studentId];
+  if (!entry) return false;
+  const ts = typeof entry === 'string' ? entry : entry.chargedAt;
   const today = new Date().toISOString().split('T')[0];
   return ts.startsWith(today);
 }
 
 function getChargedAt(studentId: string): number {
   const map = getChargedToday();
-  const ts = map[studentId];
-  if (!ts) return 0;
+  const entry = map[studentId];
+  if (!entry) return 0;
+  const ts = typeof entry === 'string' ? entry : entry.chargedAt;
   try { return new Date(ts).getTime(); } catch { return 0; }
+}
+
+function getRechargeDate(studentId: string): string | null {
+  const map = getChargedToday();
+  const entry = map[studentId];
+  if (!entry || typeof entry === 'string') return null;
+  return entry.rechargeDate || null;
+}
+
+function setRechargeDate(studentId: string, date: string) {
+  const map = getChargedToday();
+  const existing = map[studentId];
+  let entry: ChargedEntry;
+  if (existing && typeof existing === 'object' && 'chargedAt' in existing) {
+    entry = { ...existing, rechargeDate: date };
+  } else {
+    entry = { chargedAt: new Date().toISOString(), rechargeDate: date };
+  }
+  map[studentId] = entry;
+  localStorage.setItem(CHARGED_TODAY_KEY, JSON.stringify(map));
+}
+
+function clearRechargeDate(studentId: string) {
+  const map = getChargedToday();
+  const existing = map[studentId];
+  if (existing && typeof existing === 'object' && 'rechargeDate' in existing) {
+    delete existing.rechargeDate;
+    map[studentId] = existing;
+    localStorage.setItem(CHARGED_TODAY_KEY, JSON.stringify(map));
+  }
+}
+
+function removeChargedEntry(studentId: string) {
+  const map = getChargedToday();
+  delete map[studentId];
+  localStorage.setItem(CHARGED_TODAY_KEY, JSON.stringify(map));
+}
+
+function isChargedYesterday(studentId: string): boolean {
+  const map = getChargedToday();
+  const entry = map[studentId];
+  if (!entry) return false;
+  const ts = typeof entry === 'string' ? entry : entry.chargedAt;
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split('T')[0];
+  return ts.startsWith(yesterdayStr);
 }
 
 export default function OnCreditPage() {
@@ -138,8 +197,14 @@ export default function OnCreditPage() {
   const [filterCredito, setFilterCredito] = useState(true);
   const [filterEmDia, setFilterEmDia] = useState(true);
   const [filterBillingType, setFilterBillingType] = useState<'all' | 'crediario' | 'pix_direto'>('all');
-  const [filterChargeStatus, setFilterChargeStatus] = useState<'all' | 'charged' | 'pending'>('all');
+  const [filterChargeStatus, setFilterChargeStatus] = useState<'all' | 'charged' | 'pending' | 'not_charged_yesterday'>('pending');
   const [chargedTodayVersion, setChargedTodayVersion] = useState(0);
+
+  // Recharge Date Modal State
+  const [isRechargeDateModalOpen, setIsRechargeDateModalOpen] = useState(false);
+  const [rechargeDateStudent, setRechargeDateStudent] = useState<DebtStudent | null>(null);
+  const [rechargeDateValue, setRechargeDateValue] = useState('');
+  const [bulkTransferConfirmOpen, setBulkTransferConfirmOpen] = useState(false);
   const [sortCobrarAsc, setSortCobrarAsc] = useState(false);
   const [sortBy, setSortBy] = useState<'preco' | 'nome'>('preco');
   const [sortAsc, setSortAsc] = useState(false); // default: maior débito primeiro
@@ -1000,6 +1065,51 @@ export default function OnCreditPage() {
     }
   };
 
+  // === Recharge Date Handlers ===
+  const handleOpenRechargeDateModal = (student: DebtStudent, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const existing = getRechargeDate(student.student_id);
+    setRechargeDateStudent(student);
+    setRechargeDateValue(existing || (() => {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      return tomorrow.toISOString().split('T')[0];
+    })());
+    setIsRechargeDateModalOpen(true);
+  };
+
+  const handleSaveRechargeDate = () => {
+    if (!rechargeDateStudent || !rechargeDateValue) return;
+    setRechargeDate(rechargeDateStudent.student_id, rechargeDateValue);
+    showToast(`Próxima cobrança agendada para ${new Date(rechargeDateValue + 'T12:00:00').toLocaleDateString('pt-BR')}.`, 'success');
+    setIsRechargeDateModalOpen(false);
+    setChargedTodayVersion(v => v + 1);
+  };
+
+  const handleClearRechargeDate = (studentId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    clearRechargeDate(studentId);
+    showToast('Data de recobrança removida.', 'success');
+    setChargedTodayVersion(v => v + 1);
+  };
+
+  // === Bulk Transfer Handler ===
+  const handleBulkTransferChargedToPending = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const map = getChargedToday();
+    let count = 0;
+    for (const [studentId, entry] of Object.entries(map)) {
+      const ts = typeof entry === 'string' ? entry : entry.chargedAt;
+      if (ts.startsWith(today)) {
+        removeChargedEntry(studentId);
+        count++;
+      }
+    }
+    showToast(`${count} aluno(s) movido(s) para "Não Cobrados".`, 'success');
+    setBulkTransferConfirmOpen(false);
+    setChargedTodayVersion(v => v + 1);
+  };
+
   const normalizeText = (str: string) =>
     (str || '')
       .toLowerCase()
@@ -1549,17 +1659,42 @@ export default function OnCreditPage() {
                 </div>
 
                 {/* Filtro status de cobrança */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem', marginTop: '0.75rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.4rem', marginTop: '0.75rem' }}>
                   {([
                     { key: 'all' as const, label: 'Todos', color: '#6366f1', bg: '#eef2ff' },
                     { key: 'pending' as const, label: 'Não Cobrados', color: '#dc2626', bg: '#fef2f2' },
                     { key: 'charged' as const, label: 'Já Cobrados', color: '#16a34a', bg: '#f0fdf4' },
+                    { key: 'not_charged_yesterday' as const, label: 'Não Cobrados Ontem', color: '#ea580c', bg: '#fff7ed' },
                   ]).map(opt => (
-                    <button key={opt.key} type="button" onClick={() => setFilterChargeStatus(opt.key)} style={{ padding: '0.45rem 0.5rem', borderRadius: '8px', border: `2px solid ${filterChargeStatus === opt.key ? opt.color : '#e2e8f0'}`, background: filterChargeStatus === opt.key ? opt.bg : '#ffffff', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem', color: filterChargeStatus === opt.key ? opt.color : '#475569', textAlign: 'center' }}>
+                    <button key={opt.key} type="button" onClick={() => setFilterChargeStatus(opt.key)} style={{ padding: '0.45rem 0.5rem', borderRadius: '8px', border: `2px solid ${filterChargeStatus === opt.key ? opt.color : '#e2e8f0'}`, background: filterChargeStatus === opt.key ? opt.bg : '#ffffff', cursor: 'pointer', fontWeight: 600, fontSize: '0.72rem', color: filterChargeStatus === opt.key ? opt.color : '#475569', textAlign: 'center' }}>
                       {opt.label}
                     </button>
                   ))}
                 </div>
+
+                {/* Botão de transferência em lote */}
+                {chargedTodayVersion >= 0 && (() => {
+                  const chargedTodayCount = debts.filter(d => {
+                    if (d.total_debt <= 0) return false;
+                    return isChargedToday(d.student_id);
+                  }).length;
+                  if (chargedTodayCount === 0) return null;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setBulkTransferConfirmOpen(true)}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
+                        marginTop: '0.5rem', padding: '0.5rem 0.75rem', borderRadius: '8px',
+                        border: '1px solid #f97316', background: '#fff7ed',
+                        color: '#ea580c', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer',
+                        width: '100%'
+                      }}
+                    >
+                      <RefreshCw size={15} /> Mover Todos Cobrados Hoje p/ Não Cobrados
+                    </button>
+                  );
+                })()}
 
                 {/* Filtro tipo de cobrança */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem', marginTop: '0.5rem' }}>
@@ -1583,17 +1718,20 @@ export default function OnCreditPage() {
                 }).sort((a, b) => sortCobrarAsc ? a.total_debt - b.total_debt : b.total_debt - a.total_debt);
                 const pendingList = cobraveis.filter(d => !isChargedToday(d.student_id));
                 const chargedList = cobraveis.filter(d => isChargedToday(d.student_id)).sort((a, b) => getChargedAt(b.student_id) - getChargedAt(a.student_id));
+                const notChargedYesterdayList = cobraveis.filter(d => !isChargedYesterday(d.student_id));
 
                 const filteredByStatus = filterChargeStatus === 'charged'
                   ? chargedList
                   : filterChargeStatus === 'pending'
                     ? pendingList
-                    : cobraveis;
+                    : filterChargeStatus === 'not_charged_yesterday'
+                      ? notChargedYesterdayList
+                      : cobraveis;
 
                 return (
                   <>
                     {/* Pendentes */}
-                    {(filterChargeStatus === 'all' || filterChargeStatus === 'pending') && pendingList.length > 0 && (
+                    {(filterChargeStatus === 'all' || filterChargeStatus === 'pending' || filterChargeStatus === 'not_charged_yesterday') && pendingList.length > 0 && (
                       <div style={{ marginBottom: '1.25rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.65rem', padding: '0.5rem 0.75rem', background: '#fef2f2', borderRadius: '8px', border: '1px solid #fecaca' }}>
                           <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444' }} />
@@ -1601,7 +1739,9 @@ export default function OnCreditPage() {
                           <span style={{ fontSize: '0.75rem', color: '#dc2626', background: '#fee2e2', padding: '1px 6px', borderRadius: '10px', fontWeight: 700 }}>{pendingList.length}</span>
                         </div>
                         <div className="debts-cards-grid">
-                          {pendingList.map(d => (
+                          {(filterChargeStatus === 'not_charged_yesterday' ? notChargedYesterdayList : pendingList).map(d => {
+                            const rechargeDate = getRechargeDate(d.student_id);
+                            return (
                             <div key={d.student_id} className="debt-student-card" style={{ flexDirection: 'column', alignItems: 'stretch', borderLeft: '3px solid #ef4444' }} onClick={() => handleSelectStudent(d)}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -1612,12 +1752,18 @@ export default function OnCreditPage() {
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                                       <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{d.student_name}</strong>
                                       {d.billing_type === 'crediario' ? (
-                                        <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>📋 Crediário</span>
+                                        <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>Crediário</span>
                                       ) : (
-                                        <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}>⚡ Pix Direto</span>
+                                        <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}>Pix Direto</span>
                                       )}
                                     </div>
                                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{d.grade} {d.class_group}</div>
+                                    {rechargeDate && (
+                                      <div style={{ fontSize: '0.72rem', color: '#ea580c', fontWeight: 600, marginTop: '2px' }}>
+                                        Próxima cobrança: {new Date(rechargeDate + 'T12:00:00').toLocaleDateString('pt-BR')}
+                                        <button type="button" onClick={(e) => handleClearRechargeDate(d.student_id, e)} style={{ marginLeft: '4px', background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 700, padding: 0, textDecoration: 'underline' }}>✕</button>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                                 <div style={{ background: '#fee2e2', color: '#dc2626', fontWeight: 800, padding: '0.3rem 0.6rem', borderRadius: '6px', fontSize: '0.9rem' }}>
@@ -1629,11 +1775,14 @@ export default function OnCreditPage() {
                                   <Send size={14} /> Cobrar via WhatsApp
                                 </button>
                                 <button type="button" className="btn btn-sm" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', color: '#ffffff', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, borderRadius: '6px' }} title="Enviar mensagem rápida apenas com o Pix Copia e Cola" onClick={(e) => { e.stopPropagation(); handleSendPixOnly(d); }}>
-                                  ⚡ Só Pix (Copia e Cola)
+                                  Só Pix (Copia e Cola)
+                                </button>
+                                <button type="button" className="btn btn-sm" style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', color: '#ffffff', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, borderRadius: '6px', fontSize: '0.78rem' }} title="Definir data para cobrar novamente" onClick={(e) => handleOpenRechargeDateModal(d, e)}>
+                                  Agendar Próx. Cobrança
                                 </button>
                               </div>
                             </div>
-                          ))}
+                          )})}
                         </div>
                       </div>
                     )}
@@ -1647,7 +1796,9 @@ export default function OnCreditPage() {
                           <span style={{ fontSize: '0.75rem', color: '#15803d', background: '#dcfce7', padding: '1px 6px', borderRadius: '10px', fontWeight: 700 }}>{chargedList.length}</span>
                         </div>
                         <div className="debts-cards-grid">
-                          {chargedList.map(d => (
+                          {chargedList.map(d => {
+                            const rechargeDate = getRechargeDate(d.student_id);
+                            return (
                             <div key={d.student_id} className="debt-student-card" style={{ flexDirection: 'column', alignItems: 'stretch', borderLeft: '3px solid #16a34a', opacity: 0.85 }} onClick={() => handleSelectStudent(d)}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -1657,14 +1808,19 @@ export default function OnCreditPage() {
                                   <div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
                                       <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{d.student_name}</strong>
-                                      <span style={{ fontSize: '0.6rem', padding: '1px 5px', borderRadius: '4px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>✓ Cobrado Hoje</span>
+                                      <span style={{ fontSize: '0.6rem', padding: '1px 5px', borderRadius: '4px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>Cobrado Hoje</span>
                                       {d.billing_type === 'crediario' ? (
-                                        <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>📋 Crediário</span>
+                                        <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>Crediário</span>
                                       ) : (
-                                        <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}>⚡ Pix Direto</span>
+                                        <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}>Pix Direto</span>
                                       )}
                                     </div>
                                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{d.grade} {d.class_group}</div>
+                                    {rechargeDate && (
+                                      <div style={{ fontSize: '0.72rem', color: '#ea580c', fontWeight: 600, marginTop: '2px' }}>
+                                        Próxima cobrança: {new Date(rechargeDate + 'T12:00:00').toLocaleDateString('pt-BR')}
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                                 <div style={{ background: '#dcfce7', color: '#16a34a', fontWeight: 800, padding: '0.3rem 0.6rem', borderRadius: '6px', fontSize: '0.9rem' }}>
@@ -1676,11 +1832,14 @@ export default function OnCreditPage() {
                                   <Send size={14} /> Reenviar
                                 </button>
                                 <button type="button" className="btn btn-sm" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', color: '#ffffff', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, borderRadius: '6px' }} onClick={(e) => { e.stopPropagation(); handleSendPixOnly(d); }}>
-                                  ⚡ Só Pix
+                                  Só Pix
+                                </button>
+                                <button type="button" className="btn btn-sm" style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', color: '#ffffff', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, borderRadius: '6px', fontSize: '0.78rem' }} title="Definir data para cobrar novamente" onClick={(e) => handleOpenRechargeDateModal(d, e)}>
+                                  Agendar Próx. Cobrança
                                 </button>
                               </div>
                             </div>
-                          ))}
+                          )})}
                         </div>
                       </div>
                     )}
@@ -1692,7 +1851,9 @@ export default function OnCreditPage() {
                             ? 'Nenhum aluno com débito pendente no momento.'
                             : filterChargeStatus === 'charged'
                               ? 'Nenhum aluno cobrado ainda hoje.'
-                              : 'Todos os alunos já foram cobrados hoje! 🎉'}
+                              : filterChargeStatus === 'not_charged_yesterday'
+                                ? 'Todos os alunos com débito foram cobrados ontem.'
+                                : 'Todos os alunos já foram cobrados hoje!'}
                         </p>
                       </div>
                     )}
@@ -3210,6 +3371,102 @@ export default function OnCreditPage() {
         allStudents={debts}
         onConfirmBatch={handleConfirmCameraBatch}
       />
+
+      {/* Modal Agendar Próxima Cobrança */}
+      {isRechargeDateModalOpen && rechargeDateStudent && (
+        <div className="modal-overlay">
+          <div className="modal-content animate-zoomIn" style={{ maxWidth: '380px' }}>
+            <div className="modal-header">
+              <h2>Agendar Próxima Cobrança</h2>
+              <button type="button" className="btn-close" onClick={() => setIsRechargeDateModalOpen(false)}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <p style={{ marginBottom: '1rem', color: 'var(--color-text-secondary, #64748b)', fontSize: '0.9rem' }}>
+                Aluno: <strong style={{ color: 'var(--color-text-primary, #0f172a)' }}>{rechargeDateStudent.student_name}</strong><br />
+                Débito: <strong style={{ color: '#ef4444' }}>{formatCurrency(rechargeDateStudent.total_debt)}</strong>
+              </p>
+              <div className="form-group">
+                <label style={{ fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>Data para Próxima Cobrança *</label>
+                <input
+                  type="date"
+                  required
+                  className="input"
+                  style={{ cursor: 'pointer', width: '100%', padding: '0.65rem 0.85rem', borderRadius: '8px' }}
+                  value={rechargeDateValue}
+                  onClick={(e) => e.currentTarget.showPicker?.()}
+                  onChange={(e) => setRechargeDateValue(e.target.value)}
+                />
+                <div style={{ display: 'flex', gap: '0.35rem', marginTop: '0.35rem', flexWrap: 'wrap' }}>
+                  {[
+                    { label: 'Amanhã', offset: 1 },
+                    { label: 'Em 3 dias', offset: 3 },
+                    { label: 'Em 1 semana', offset: 7 },
+                    { label: 'Em 2 semanas', offset: 14 },
+                    { label: 'Próxima segunda', offset: (() => { const d = new Date(); const day = d.getDay(); return day === 0 ? 1 : day === 6 ? 2 : 8 - day; })() },
+                  ].map(opt => (
+                    <button
+                      key={opt.label}
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      onClick={() => {
+                        const d = new Date();
+                        d.setDate(d.getDate() + opt.offset);
+                        setRechargeDateValue(d.toISOString().split('T')[0]);
+                      }}
+                      style={{ padding: '2px 8px', fontSize: '0.75rem', color: '#2563eb', fontWeight: 600, border: '1px solid #bfdbfe', borderRadius: '4px' }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <small style={{ display: 'block', marginTop: '0.35rem', color: 'var(--color-text-muted, #94a3b8)', fontSize: '0.78rem' }}>
+                  O aluno só aparecerá na lista de pendentes a partir desta data.
+                </small>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-ghost" onClick={() => setIsRechargeDateModalOpen(false)}>
+                Cancelar
+              </button>
+              <button type="button" className="btn btn-primary" onClick={handleSaveRechargeDate} disabled={!rechargeDateValue}>
+                Agendar Cobrança
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Confirmar Transferência em Lote */}
+      {bulkTransferConfirmOpen && (
+        <div className="modal-overlay">
+          <div className="modal-content animate-zoomIn" style={{ maxWidth: '380px' }}>
+            <div className="modal-header">
+              <h2>Confirmar Transferência</h2>
+              <button type="button" className="btn-close" onClick={() => setBulkTransferConfirmOpen(false)}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <p style={{ color: 'var(--color-text-primary, #0f172a)', fontSize: '0.9rem', lineHeight: 1.5 }}>
+                Todos os alunos <strong>marcados como cobrados hoje</strong> serão movidos de volta para a aba <strong>"Não Cobrados"</strong>.
+              </p>
+              <p style={{ color: 'var(--color-text-secondary, #64748b)', fontSize: '0.82rem', marginTop: '0.5rem' }}>
+                Isso é útil quando você precisa refazer as cobranças do dia.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-ghost" onClick={() => setBulkTransferConfirmOpen(false)}>
+                Cancelar
+              </button>
+              <button type="button" className="btn btn-primary" style={{ background: '#f97316', borderColor: '#f97316' }} onClick={handleBulkTransferChargedToPending}>
+                Confirmar Transferência
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

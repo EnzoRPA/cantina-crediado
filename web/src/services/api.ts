@@ -133,6 +133,12 @@ export const posApi = {
     api.delete(`/pos/on-credit/transactions/${transactionId}`),
   scanSheetImage: (data: { imageBase64: string; apiKey?: string }) =>
     api.post('/pos/on-credit/scan-sheet', data),
+  saveStudentAlias: (data: { studentId: string; rawAlias: string }) =>
+    api.post('/pos/on-credit/aliases', data),
+  getStudentAliases: () =>
+    api.get('/pos/on-credit/aliases'),
+  deleteStudentAlias: (aliasId: string) =>
+    api.delete(`/pos/on-credit/aliases/${aliasId}`),
   triggerBackup: () =>
     api.post('/pos/backup/run'),
   getBackups: () =>
