@@ -631,17 +631,16 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
     const formattedPhone = phone.length === 11 ? `55${phone}` : phone;
     const parsedAmount = parseMathExpression(item.amountInput);
     const formattedAmount = formatCurrency(parsedAmount);
-    const dateToday = new Date().toLocaleDateString('pt-BR');
-    const studentGrade = item.grade ? ` (${item.grade})` : '';
-    const guardianGreeting = item.guardianName ? `Olá, ${item.guardianName}!` : 'Olá!';
+    const dateParts = launchDate.split('-');
+    const formattedDate = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
+    const genderPrefix = item.studentName.endsWith('a') ? 'aluna' : 'aluno';
 
     if (!formattedPhone) {
       showToast(`Por favor informe o telefone (WhatsApp) do responsável para ${item.studentName}.`, 'error');
       return;
     }
 
-    // Regra estrita do usuário: SOMENTE A CHAVE CNPJ 52803416000141 (SEM COPIA E COLA)
-    const messageText = `${guardianGreeting} Passando para informar o consumo de hoje de *${item.studentName}*${studentGrade} na cantina: *${formattedAmount}* (${dateToday}).\n\n*Chave PIX (CNPJ):*\n52803416000141\n\nPor favor, envie o comprovante após a transferência. Obrigado!`;
+    const messageText = `Olá!\n\nO ${genderPrefix} *${item.studentName}* no dia *${formattedDate}* na cantina é: *${formattedAmount}*\n\n*Chave PIX (CNPJ):*\n52803416000141`;
 
     const url = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(messageText)}`;
     window.open(url, '_blank');
@@ -662,10 +661,10 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
   const handleCopyPixMessage = (item: ScannedBatchItem) => {
     const parsedAmount = parseMathExpression(item.amountInput);
     const formattedAmount = formatCurrency(parsedAmount);
-    const dateToday = new Date().toLocaleDateString('pt-BR');
-    const studentGrade = item.grade ? ` (${item.grade})` : '';
-    const guardianGreeting = item.guardianName ? `Olá, ${item.guardianName}!` : 'Olá!';
-    const messageText = `${guardianGreeting} Passando para informar o consumo de hoje de *${item.studentName}*${studentGrade} na cantina: *${formattedAmount}* (${dateToday}).\n\n*Chave PIX (CNPJ):*\n52803416000141\n\nPor favor, envie o comprovante após a transferência. Obrigado!`;
+    const dateParts = launchDate.split('-');
+    const formattedDate = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
+    const genderPrefix = item.studentName.endsWith('a') ? 'aluna' : 'aluno';
+    const messageText = `Olá!\n\nO ${genderPrefix} *${item.studentName}* no dia *${formattedDate}* na cantina é: *${formattedAmount}*\n\n*Chave PIX (CNPJ):*\n52803416000141`;
 
     try {
       navigator.clipboard.writeText(messageText);
@@ -704,8 +703,9 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
       return;
     }
     const total = pixItems.reduce((acc, i) => acc + parseMathExpression(i.amountInput), 0);
-    const dateToday = new Date().toLocaleDateString('pt-BR');
-    let text = `⚡ *RELAÇÃO PIX DIRETO DO DIA — ${dateToday}*\n\n`;
+    const dateParts = launchDate.split('-');
+    const formattedDate = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
+    let text = `⚡ *RELAÇÃO PIX DIRETO — ${formattedDate}*\n\n`;
     pixItems.forEach((i, idx) => {
       text += `${idx + 1}. *${i.studentName}* ${i.grade ? `(${i.grade})` : ''}: ${formatCurrency(parseMathExpression(i.amountInput))} | Resp: ${i.guardianName || 'Não informado'} (${i.guardianPhone || 'Sem telefone'})\n`;
     });
