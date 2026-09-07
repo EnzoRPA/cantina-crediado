@@ -20,6 +20,9 @@ interface DebtStudent {
   last_purchase_amount?: number;
   balance?: number;
   billing_type?: 'pix_direto' | 'crediario';
+  guardian_name?: string;
+  guardian_phone?: string;
+  type?: 'student' | 'employee';
 }
 
 interface DebtDetailItem {

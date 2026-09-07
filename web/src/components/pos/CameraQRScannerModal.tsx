@@ -16,6 +16,11 @@ import {
   Check,
   BookOpen,
   CheckCircle2,
+  Share2,
+  Copy,
+  Zap,
+  CreditCard,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { posApi } from '../../services/api';
 import { showToast } from '../common/Toast';
@@ -45,6 +50,10 @@ export interface ScannedBatchItem {
   confidence?: 'high' | 'medium' | 'low';
   totalDebt?: number;
   isFirstTimeCredit?: boolean;
+  billingType: 'crediario' | 'pix_direto';
+  guardianName?: string;
+  guardianPhone?: string;
+  waSent?: boolean;
 }
 
 export interface SuggestedStudent {
@@ -54,6 +63,9 @@ export interface SuggestedStudent {
   class_group?: string;
   enrollment_number?: string;
   similarity: number;
+  billing_type?: 'pix_direto' | 'crediario';
+  guardian_name?: string;
+  guardian_phone?: string;
 }
 
 export interface UnrecognizedSheetItem {
@@ -62,6 +74,7 @@ export interface UnrecognizedSheetItem {
   raw_matricula?: string;
   raw_amount_text?: string;
   amount: number;
+  payment_method_sheet?: 'pix' | 'fiado';
   suggested_students: SuggestedStudent[];
 }
 
@@ -71,6 +84,7 @@ interface ItemResolutionState {
   rememberAlias: boolean;
   searchQuery: string;
   isSearchOpen: boolean;
+  targetBillingType?: 'crediario' | 'pix_direto';
 }
 
 interface CameraQRScannerModalProps {
@@ -146,6 +160,7 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
   const [cameraActive, setCameraActive] = useState(false);
   const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
   const [scannedItems, setScannedItems] = useState<ScannedBatchItem[]>([]);
+  const [scannedTab, setScannedTab] = useState<'crediario' | 'pix_direto'>('crediario');
   const [unrecognizedItems, setUnrecognizedItems] = useState<UnrecognizedSheetItem[]>([]);
   const [resolutionState, setResolutionState] = useState<{ [tempId: string]: ItemResolutionState }>({});
   const [showAliasesModal, setShowAliasesModal] = useState(false);
@@ -296,8 +311,11 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
       const totalDebt = student.total_debt || 0;
       const hasHistory = totalDebt > 0 || !!student.last_purchase_at;
       const isFirstTime = !hasHistory;
+      const isPix = student.billing_type === 'pix_direto';
 
-      if (isFirstTime) {
+      if (isPix) {
+        showToast(`⚡ ${student.student_name} adicionado à lista de Pix Direto!`, 'info');
+      } else if (isFirstTime) {
         showToast(`🌟 ${student.student_name} está no crediário pela 1ª vez!`, 'info');
       } else if (totalDebt > 0) {
         showToast(`⚠️ ${student.student_name} já possui R$ ${totalDebt.toFixed(2)} em débitos.`, 'info');
@@ -314,7 +332,17 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
         scannedAt: new Date(),
         totalDebt: totalDebt,
         isFirstTimeCredit: isFirstTime,
+        billingType: isPix ? 'pix_direto' : 'crediario',
+        guardianName: student.guardian_name,
+        guardianPhone: student.guardian_phone,
+        waSent: false,
       };
+
+      if (isPix) {
+        setScannedTab('pix_direto');
+      } else {
+        setScannedTab('crediario');
+      }
 
       setTimeout(() => {
         const inputEl = inputRefs.current[student.student_id];
@@ -394,6 +422,11 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
             const totalDebt = matching?.total_debt || 0;
             const hasHistory = totalDebt > 0 || !!matching?.last_purchase_at;
             const isFirstTime = !hasHistory;
+            const isFromSheetPix = extracted.pagamento === 'pix' || extracted.payment_method_sheet === 'pix';
+            const isPixDireto =
+              isFromSheetPix ||
+              extracted.billing_type === 'pix_direto' ||
+              matching?.billing_type === 'pix_direto';
 
             return {
               studentId: extracted.student_id,
@@ -405,10 +438,19 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
               confidence: extracted.confidence,
               totalDebt: totalDebt,
               isFirstTimeCredit: isFirstTime,
+              billingType: isPixDireto ? 'pix_direto' : 'crediario',
+              guardianName: extracted.guardian_name || matching?.guardian_name,
+              guardianPhone: extracted.guardian_phone || matching?.guardian_phone,
+              waSent: false,
             };
           });
 
           const filteredNew = newBatch.filter((item) => !existingIds.has(item.studentId));
+          const hasPix = filteredNew.some((i) => i.billingType === 'pix_direto');
+          const hasCred = filteredNew.some((i) => i.billingType === 'crediario');
+          if (hasPix && !hasCred) {
+            setScannedTab('pix_direto');
+          }
           return [...filteredNew, ...prev];
         });
       }
@@ -418,12 +460,19 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
       const initialResolutions: { [tempId: string]: ItemResolutionState } = {};
       unrecognized.forEach((u) => {
         const topSug = u.suggested_students && u.suggested_students.length > 0 ? u.suggested_students[0] : null;
+        const matchingStudent = topSug ? allStudents.find((s) => s.student_id === topSug.student_id) : null;
+        const isPix =
+          u.payment_method_sheet === 'pix' ||
+          matchingStudent?.billing_type === 'pix_direto' ||
+          topSug?.billing_type === 'pix_direto';
+
         initialResolutions[u.temp_id] = {
           studentId: topSug && topSug.similarity >= 0.70 ? topSug.student_id : '',
           amount: u.amount.toString(),
           rememberAlias: true,
           searchQuery: '',
           isSearchOpen: false,
+          targetBillingType: isPix ? 'pix_direto' : 'crediario',
         };
       });
       setResolutionState(initialResolutions);
@@ -485,6 +534,10 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
     const totalDebt = student.total_debt || 0;
     const hasHistory = totalDebt > 0 || !!student.last_purchase_at;
     const isFirstTime = !hasHistory;
+    const isPixFromSheet = item.payment_method_sheet === 'pix';
+    const targetBillingType =
+      res.targetBillingType ||
+      (isPixFromSheet || student.billing_type === 'pix_direto' ? 'pix_direto' : 'crediario');
 
     setScannedItems((prev) => [
       {
@@ -497,9 +550,17 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
         confidence: 'medium',
         totalDebt: totalDebt,
         isFirstTimeCredit: isFirstTime,
+        billingType: targetBillingType,
+        guardianName: student.guardian_name,
+        guardianPhone: student.guardian_phone,
+        waSent: false,
       },
       ...prev.filter((i) => i.studentId !== student.student_id),
     ]);
+
+    if (targetBillingType === 'pix_direto') {
+      setScannedTab('pix_direto');
+    }
 
     setUnrecognizedItems((prev) => prev.filter((u) => u.temp_id !== tempId));
   };
@@ -510,11 +571,15 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
   };
 
   const handleQuickSelectSuggestion = (tempId: string, studentId: string) => {
+    const student = allStudents.find((s) => s.student_id === studentId);
+    const item = unrecognizedItems.find((u) => u.temp_id === tempId);
+    const isPix = item?.payment_method_sheet === 'pix' || student?.billing_type === 'pix_direto';
     setResolutionState((prev) => ({
       ...prev,
       [tempId]: {
         ...(prev[tempId] || { amount: '', rememberAlias: true, searchQuery: '', isSearchOpen: false }),
         studentId,
+        targetBillingType: isPix ? 'pix_direto' : 'crediario',
         isSearchOpen: false,
       },
     }));
@@ -560,19 +625,138 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
     );
   };
 
+  // Funções exclusivas para Alunos Pix Direto (Zero mistura com Crediário)
+  const handleSendPixWhatsApp = (item: ScannedBatchItem) => {
+    const phone = (item.guardianPhone || '').replace(/\D/g, '');
+    const formattedPhone = phone.length === 11 ? `55${phone}` : phone;
+    const parsedAmount = parseMathExpression(item.amountInput);
+    const formattedAmount = formatCurrency(parsedAmount);
+    const dateToday = new Date().toLocaleDateString('pt-BR');
+    const studentGrade = item.grade ? ` (${item.grade})` : '';
+    const guardianGreeting = item.guardianName ? `Olá, ${item.guardianName}!` : 'Olá!';
+
+    if (!formattedPhone) {
+      showToast(`Por favor informe o telefone (WhatsApp) do responsável para ${item.studentName}.`, 'error');
+      return;
+    }
+
+    // Regra estrita do usuário: SOMENTE A CHAVE CNPJ 52803416000141 (SEM COPIA E COLA)
+    const messageText = `${guardianGreeting} Passando para informar o consumo de hoje de *${item.studentName}*${studentGrade} na cantina: *${formattedAmount}* (${dateToday}).\n\n*Chave PIX (CNPJ):*\n52803416000141\n\nPor favor, envie o comprovante após a transferência. Obrigado!`;
+
+    const url = `https://api.whatsapp.com/send?phone=${formattedPhone}&text=${encodeURIComponent(messageText)}`;
+    window.open(url, '_blank');
+
+    setScannedItems((prev) =>
+      prev.map((i) => (i.studentId === item.studentId ? { ...i, waSent: true } : i))
+    );
+    showToast(`WhatsApp de cobrança aberto para ${item.studentName}!`, 'success');
+  };
+
+  const handleCopyPixKeyOnly = () => {
+    try {
+      navigator.clipboard.writeText('52803416000141');
+      showToast('Chave PIX (CNPJ) 52803416000141 copiada!', 'success');
+    } catch (_) {}
+  };
+
+  const handleCopyPixMessage = (item: ScannedBatchItem) => {
+    const parsedAmount = parseMathExpression(item.amountInput);
+    const formattedAmount = formatCurrency(parsedAmount);
+    const dateToday = new Date().toLocaleDateString('pt-BR');
+    const studentGrade = item.grade ? ` (${item.grade})` : '';
+    const guardianGreeting = item.guardianName ? `Olá, ${item.guardianName}!` : 'Olá!';
+    const messageText = `${guardianGreeting} Passando para informar o consumo de hoje de *${item.studentName}*${studentGrade} na cantina: *${formattedAmount}* (${dateToday}).\n\n*Chave PIX (CNPJ):*\n52803416000141\n\nPor favor, envie o comprovante após a transferência. Obrigado!`;
+
+    try {
+      navigator.clipboard.writeText(messageText);
+      showToast(`Mensagem de cobrança para ${item.studentName} copiada!`, 'success');
+    } catch (_) {}
+  };
+
+  const handleUpdateGuardianPhone = (studentId: string, phone: string) => {
+    setScannedItems((prev) =>
+      prev.map((i) => (i.studentId === studentId ? { ...i, guardianPhone: phone } : i))
+    );
+  };
+
+  const handleToggleItemBillingType = (studentId: string) => {
+    setScannedItems((prev) =>
+      prev.map((i) => {
+        if (i.studentId === studentId) {
+          const nextType = i.billingType === 'crediario' ? 'pix_direto' : 'crediario';
+          showToast(
+            nextType === 'pix_direto'
+              ? `⚡ ${i.studentName} movido para Pix Direto (NÃO entrará no crediário)`
+              : `📋 ${i.studentName} movido para Lançamentos Crediário`,
+            'info'
+          );
+          return { ...i, billingType: nextType };
+        }
+        return i;
+      })
+    );
+  };
+
+  const handleCopyAllPixSummary = () => {
+    const pixItems = scannedItems.filter((i) => i.billingType === 'pix_direto');
+    if (pixItems.length === 0) {
+      showToast('Nenhum aluno Pix Direto na lista.', 'info');
+      return;
+    }
+    const total = pixItems.reduce((acc, i) => acc + parseMathExpression(i.amountInput), 0);
+    const dateToday = new Date().toLocaleDateString('pt-BR');
+    let text = `⚡ *RELAÇÃO PIX DIRETO DO DIA — ${dateToday}*\n\n`;
+    pixItems.forEach((i, idx) => {
+      text += `${idx + 1}. *${i.studentName}* ${i.grade ? `(${i.grade})` : ''}: ${formatCurrency(parseMathExpression(i.amountInput))} | Resp: ${i.guardianName || 'Não informado'} (${i.guardianPhone || 'Sem telefone'})\n`;
+    });
+    text += `\n*Total a Receber: ${formatCurrency(total)}*\n*Chave PIX (CNPJ):* 52803416000141`;
+    try {
+      navigator.clipboard.writeText(text);
+      showToast('Resumo Pix Direto copiado com sucesso!', 'success');
+    } catch (_) {}
+  };
+
+  const handleOpenNextPendingZap = () => {
+    const pendingPix = scannedItems.filter((i) => i.billingType === 'pix_direto' && !i.waSent);
+    if (pendingPix.length === 0) {
+      showToast('Todos os alunos Pix Direto da lista já tiveram o WhatsApp aberto!', 'info');
+      return;
+    }
+    handleSendPixWhatsApp(pendingPix[0]);
+  };
+
+  const crediarioItems = scannedItems.filter((i) => i.billingType === 'crediario');
+  const pixDiretoItems = scannedItems.filter((i) => i.billingType === 'pix_direto');
+
+  const grandTotalCrediario = crediarioItems.reduce(
+    (sum, item) => sum + parseMathExpression(item.amountInput),
+    0
+  );
+
+  const grandTotalPixDireto = pixDiretoItems.reduce(
+    (sum, item) => sum + parseMathExpression(item.amountInput),
+    0
+  );
+
   const grandTotalBatch = scannedItems.reduce(
     (sum, item) => sum + parseMathExpression(item.amountInput),
     0
   );
 
   const handleSaveBatch = async () => {
-    if (scannedItems.length === 0) {
-      showToast('Nenhum aluno na lista para lançamento.', 'info');
+    // REGRA CRÍTICA E INVIOLÁVEL: Apenas alunos de Crediário são enviados para onConfirmBatch!
+    // Alunos Pix Direto NUNCA são lançados no crediário!
+    if (crediarioItems.length === 0) {
+      if (pixDiretoItems.length > 0) {
+        showToast('Todos os consumos da lista são Pix Direto. Eles não entram no crediário e devem ser cobrados pelo Zap!', 'info');
+      } else {
+        showToast('Nenhum aluno de crediário na lista para lançamento.', 'info');
+      }
       return;
     }
 
     const payloadItems = [];
-    for (const item of scannedItems) {
+    for (const item of crediarioItems) {
       const parsed = parseMathExpression(item.amountInput);
       if (isNaN(parsed) || parsed <= 0) {
         showToast(`Informe um valor válido para ${item.studentName}.`, 'error');
@@ -584,7 +768,18 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
     setSubmitting(true);
     try {
       await onConfirmBatch(payloadItems, launchDate);
-      onClose();
+      if (pixDiretoItems.length > 0) {
+        // Mantém apenas os itens de Pix Direto para o operador terminar de mandar os Zaps!
+        setScannedItems(pixDiretoItems);
+        setScannedTab('pix_direto');
+        showToast(
+          `✅ ${payloadItems.length} consumos lançados no Crediário! Restam ${pixDiretoItems.length} alunos Pix Direto para cobrança no Zap.`,
+          'success'
+        );
+      } else {
+        showToast(`✅ ${payloadItems.length} consumos de Crediário lançados com sucesso!`, 'success');
+        onClose();
+      }
     } catch (err) {
       console.error('Error submitting scanned batch:', err);
     } finally {
@@ -1539,24 +1734,74 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
                           )}
                         </div>
 
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          disabled={!state.studentId}
-                          onClick={() => handleResolveUnrecognized(uItem.temp_id)}
-                          style={{
-                            background: '#16a34a',
-                            color: '#ffffff',
-                            fontWeight: 700,
-                            padding: '6px 12px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            fontSize: '0.82rem',
-                          }}
-                        >
-                          <Plus size={15} /> Confirmar e Lançar
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', background: '#f1f5f9', padding: '2px', borderRadius: '6px' }}>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setResolutionState((prev) => ({
+                                  ...prev,
+                                  [uItem.temp_id]: { ...state, targetBillingType: 'crediario' },
+                                }))
+                              }
+                              style={{
+                                padding: '4px 8px',
+                                fontSize: '0.74rem',
+                                fontWeight: 700,
+                                borderRadius: '4px',
+                                border: 'none',
+                                cursor: 'pointer',
+                                background: (state.targetBillingType || 'crediario') === 'crediario' ? '#ffffff' : 'transparent',
+                                color: (state.targetBillingType || 'crediario') === 'crediario' ? '#16a34a' : '#64748b',
+                                boxShadow: (state.targetBillingType || 'crediario') === 'crediario' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                              }}
+                            >
+                              📋 Crediário
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setResolutionState((prev) => ({
+                                  ...prev,
+                                  [uItem.temp_id]: { ...state, targetBillingType: 'pix_direto' },
+                                }))
+                              }
+                              style={{
+                                padding: '4px 8px',
+                                fontSize: '0.74rem',
+                                fontWeight: 700,
+                                borderRadius: '4px',
+                                border: 'none',
+                                cursor: 'pointer',
+                                background: state.targetBillingType === 'pix_direto' ? '#ffffff' : 'transparent',
+                                color: state.targetBillingType === 'pix_direto' ? '#ea580c' : '#64748b',
+                                boxShadow: state.targetBillingType === 'pix_direto' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                              }}
+                            >
+                              ⚡ Pix Direto
+                            </button>
+                          </div>
+
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            disabled={!state.studentId}
+                            onClick={() => handleResolveUnrecognized(uItem.temp_id)}
+                            style={{
+                              background: state.targetBillingType === 'pix_direto' ? '#ea580c' : '#16a34a',
+                              borderColor: state.targetBillingType === 'pix_direto' ? '#ea580c' : '#16a34a',
+                              color: '#ffffff',
+                              fontWeight: 700,
+                              padding: '6px 12px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontSize: '0.82rem',
+                            }}
+                          >
+                            <Plus size={15} /> Confirmar ({state.targetBillingType === 'pix_direto' ? 'Pix' : 'Crediário'})
+                          </button>
+                        </div>
                       </div>
 
                       {/* Bottom row: Checkbox de memorização de grafia */}
@@ -1594,129 +1839,527 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
             </div>
           )}
 
-          {/* Scanned Batch Table */}
+          {/* Scanned Batch Table & Segregation Tabs */}
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                  Lista de Consumo Identificado ({scannedItems.length})
-                </h4>
-                {scannedItems.length > 0 && (
-                  <span style={{ fontSize: '0.82rem', color: '#16a34a', fontWeight: 700 }}>
-                    • Total: {formatCurrency(grandTotalBatch)}
-                  </span>
-                )}
-              </div>
-              {scannedItems.length > 0 && (
+            {/* Header com Abas de Segregação: Crediário vs Pix Direto */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '0.85rem',
+                flexWrap: 'wrap',
+                gap: '0.75rem',
+              }}
+            >
+              <div style={{ display: 'flex', gap: '0.5rem', background: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
                 <button
                   type="button"
-                  className="btn btn-sm btn-ghost"
-                  onClick={() => setScannedItems([])}
-                  style={{ color: '#ef4444', fontSize: '0.8rem' }}
+                  onClick={() => setScannedTab('crediario')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '7px 14px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: '0.86rem',
+                    cursor: 'pointer',
+                    background: scannedTab === 'crediario' ? '#ffffff' : 'transparent',
+                    color: scannedTab === 'crediario' ? '#16a34a' : '#64748b',
+                    boxShadow: scannedTab === 'crediario' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+                    transition: 'all 0.15s ease',
+                  }}
                 >
-                  Limpar Lista
+                  <CreditCard size={16} />
+                  <span>📋 Lançamentos Crediário</span>
+                  <span
+                    style={{
+                      background: scannedTab === 'crediario' ? '#dcfce7' : '#e2e8f0',
+                      color: scannedTab === 'crediario' ? '#15803d' : '#64748b',
+                      fontSize: '0.75rem',
+                      padding: '1px 7px',
+                      borderRadius: '10px',
+                    }}
+                  >
+                    {crediarioItems.length}
+                  </span>
                 </button>
-              )}
+
+                <button
+                  type="button"
+                  onClick={() => setScannedTab('pix_direto')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '7px 14px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: '0.86rem',
+                    cursor: 'pointer',
+                    background: scannedTab === 'pix_direto' ? '#ffffff' : 'transparent',
+                    color: scannedTab === 'pix_direto' ? '#ea580c' : '#64748b',
+                    boxShadow: scannedTab === 'pix_direto' ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <Zap size={16} />
+                  <span>⚡ Pix Direto do Dia (Cobrança Zap)</span>
+                  <span
+                    style={{
+                      background: scannedTab === 'pix_direto' ? '#ffedd5' : '#e2e8f0',
+                      color: scannedTab === 'pix_direto' ? '#c2410c' : '#64748b',
+                      fontSize: '0.75rem',
+                      padding: '1px 7px',
+                      borderRadius: '10px',
+                    }}
+                  >
+                    {pixDiretoItems.length}
+                  </span>
+                </button>
+              </div>
+
+              {/* Ações Rápidas no Topo */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {scannedTab === 'pix_direto' && (
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline"
+                      onClick={handleCopyPixKeyOnly}
+                      style={{ fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '4px', borderColor: '#fdba74', color: '#ea580c' }}
+                      title="Copiar Chave Pix CNPJ 52803416000141"
+                    >
+                      <Copy size={13} /> Chave CNPJ: 52803416000141
+                    </button>
+                    {pixDiretoItems.length > 0 && (
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline"
+                          onClick={handleCopyAllPixSummary}
+                          style={{ fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '4px', borderColor: '#fdba74', color: '#ea580c' }}
+                          title="Copiar resumo de cobrança de todos os alunos Pix Direto"
+                        >
+                          <Copy size={13} /> Copiar Resumo Pix ({formatCurrency(grandTotalPixDireto)})
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          onClick={handleOpenNextPendingZap}
+                          style={{
+                            fontSize: '0.78rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            background: '#16a34a',
+                            color: '#ffffff',
+                            fontWeight: 700,
+                            padding: '5px 10px',
+                          }}
+                          title="Abrir WhatsApp do próximo aluno pendente"
+                        >
+                          <Share2 size={13} /> Disparar Próximo Zap
+                        </button>
+                      </>
+                    )}
+                  </>
+                )}
+
+                {scannedItems.length > 0 && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    onClick={() => setScannedItems([])}
+                    style={{ color: '#ef4444', fontSize: '0.8rem' }}
+                  >
+                    Limpar Lista
+                  </button>
+                )}
+              </div>
             </div>
 
-            {scannedItems.length === 0 ? (
+            {/* Banner Informativo da Aba Pix Direto */}
+            {scannedTab === 'pix_direto' && (
               <div
                 style={{
-                  border: '2px dashed var(--border-color, #cbd5e1)',
-                  borderRadius: '12px',
-                  padding: '2.5rem',
-                  textAlign: 'center',
-                  color: 'var(--text-muted, #64748b)',
+                  background: '#fff7ed',
+                  border: '1px solid #fed7aa',
+                  borderRadius: '10px',
+                  padding: '0.75rem 1rem',
+                  marginBottom: '1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '0.5rem',
                 }}
               >
-                <Camera size={36} style={{ margin: '0 auto 0.5rem auto', color: '#94a3b8' }} />
-                <strong>Nenhum consumo carregado ainda.</strong>
-                <p style={{ fontSize: '0.82rem', margin: '4px 0 0 0' }}>
-                  Tire uma foto da folha A4 acima ou use a câmera para identificar os consumos.
-                </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Zap size={20} color="#ea580c" />
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#9a3412' }}>
+                      ⚡ Lista de Pix Direto do Dia — Pagamento Imediato via Zap
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#c2410c' }}>
+                      Estes consumos <strong>NÃO ENTRAM NO CREDIÁRIO</strong> nem acumulam dívida. Mande o valor diretamente para os responsáveis via WhatsApp abaixo.
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#9a3412', background: '#ffedd5', padding: '4px 10px', borderRadius: '8px', border: '1px solid #fed7aa' }}>
+                    Chave PIX (CNPJ): 52803416000141
+                  </span>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#ea580c' }}>
+                    Total: {formatCurrency(grandTotalPixDireto)}
+                  </span>
+                </div>
               </div>
-            ) : (
-              <div style={{ border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px', overflow: 'hidden' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
-                  <thead>
-                    <tr style={{ background: 'var(--bg-hover, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', textAlign: 'left' }}>
-                      <th style={{ padding: '10px 14px', width: '50px' }}>#</th>
-                      <th style={{ padding: '10px 14px' }}>Aluno / Matrícula</th>
-                      <th style={{ padding: '10px 14px', width: '220px' }}>Valor Consumido (R$)</th>
-                      <th style={{ padding: '10px 14px', width: '60px', textAlign: 'center' }}>Ação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {scannedItems.map((item, idx) => (
-                      <tr
-                        key={item.studentId}
-                        style={{
-                          borderBottom: '1px solid var(--border-color, #f1f5f9)',
-                          background: idx === 0 ? '#f0fdf4' : 'var(--bg-card, #ffffff)',
-                        }}
-                      >
-                        <td style={{ padding: '10px 14px', fontWeight: 'bold', color: '#64748b' }}>
-                          {scannedItems.length - idx}
-                        </td>
-                        <td style={{ padding: '10px 14px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <strong style={{ color: 'var(--text-main)' }}>{item.studentName}</strong>
-                            {item.confidence === 'high' && (
-                              <span style={{ fontSize: '0.68rem', background: '#dcfce7', color: '#15803d', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>
-                                IA 100%
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap', marginTop: '2px' }}>
-                            {item.grade ? <span>Série/Turma: {item.grade}</span> : null}
-                            {item.enrollmentNumber ? <span>• Matrícula: {item.enrollmentNumber}</span> : null}
-                            {item.isFirstTimeCredit ? (
-                              <span style={{ fontSize: '0.7rem', background: '#fef3c7', color: '#b45309', padding: '1px 6px', borderRadius: '4px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                🌟 1ª Vez no Crediário
-                              </span>
-                            ) : (item.totalDebt || 0) > 0 ? (
-                              <span style={{ fontSize: '0.7rem', background: '#fee2e2', color: '#dc2626', padding: '1px 6px', borderRadius: '4px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                📋 Débito anterior: {formatCurrency(item.totalDebt || 0)}
-                              </span>
-                            ) : (
-                              <span style={{ fontSize: '0.7rem', background: '#f1f5f9', color: '#475569', padding: '1px 6px', borderRadius: '4px', fontWeight: 600 }}>
-                                Histórico OK (R$ 0)
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td style={{ padding: '10px 14px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                            <span style={{ fontWeight: 700, color: 'var(--text-muted)' }}>R$</span>
-                            <input
-                              ref={(el) => {
-                                inputRefs.current[item.studentId] = el;
-                              }}
-                              type="text"
-                              className="form-input"
-                              value={item.amountInput}
-                              onChange={(e) => handleAmountChange(item.studentId, e.target.value)}
-                              placeholder="ex: 12.50 ou 5+3"
-                              style={{ fontWeight: 800, fontSize: '1rem', color: '#16a34a' }}
-                            />
-                          </div>
-                        </td>
-                        <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-ghost"
-                            onClick={() => handleRemoveItem(item.studentId)}
-                            title="Remover aluno"
-                            style={{ color: '#ef4444', padding: '4px' }}
+            )}
+
+            {/* Banner Informativo da Aba Crediário */}
+            {scannedTab === 'crediario' && (
+              <div
+                style={{
+                  background: '#f0fdf4',
+                  border: '1px solid #bbf7d0',
+                  borderRadius: '10px',
+                  padding: '0.75rem 1rem',
+                  marginBottom: '1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '0.5rem',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <CreditCard size={20} color="#16a34a" />
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#166534' }}>
+                      📋 Lançamentos de Crediário (A Prazo / Fiado)
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#15803d' }}>
+                      Estes consumos serão lançados no sistema como débito pendente para fechamento do ciclo.
+                    </div>
+                  </div>
+                </div>
+                <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#166534' }}>
+                  Total Crediário: {formatCurrency(grandTotalCrediario)}
+                </span>
+              </div>
+            )}
+
+            {/* Conteúdo da Aba Pix Direto */}
+            {scannedTab === 'pix_direto' && (
+              <>
+                {pixDiretoItems.length === 0 ? (
+                  <div
+                    style={{
+                      border: '2px dashed #fed7aa',
+                      borderRadius: '12px',
+                      padding: '2.5rem',
+                      textAlign: 'center',
+                      color: '#9a3412',
+                      background: '#fffaf5',
+                    }}
+                  >
+                    <Zap size={36} style={{ margin: '0 auto 0.5rem auto', color: '#f97316' }} />
+                    <strong>Nenhum aluno Pix Direto identificado nesta folha.</strong>
+                    <p style={{ fontSize: '0.82rem', margin: '4px 0 0 0', color: '#c2410c' }}>
+                      Se algum aluno for Pix Direto, você pode clicar em "Mover p/ Pix Direto ⚡" na aba de Crediário.
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{ border: '1px solid #fed7aa', borderRadius: '12px', overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+                      <thead>
+                        <tr style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa', textAlign: 'left' }}>
+                          <th style={{ padding: '10px 14px', width: '45px' }}>#</th>
+                          <th style={{ padding: '10px 14px', minWidth: '180px' }}>Aluno / Série</th>
+                          <th style={{ padding: '10px 14px', width: '150px' }}>Valor do Dia (R$)</th>
+                          <th style={{ padding: '10px 14px', minWidth: '220px' }}>WhatsApp do Responsável</th>
+                          <th style={{ padding: '10px 14px', width: '90px', textAlign: 'center' }}>Status</th>
+                          <th style={{ padding: '10px 14px', width: '220px', textAlign: 'center' }}>Ações de Cobrança</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pixDiretoItems.map((item, idx) => (
+                          <tr
+                            key={item.studentId}
+                            style={{
+                              borderBottom: '1px solid #f1f5f9',
+                              background: item.waSent ? '#f0fdf4' : '#ffffff',
+                            }}
                           >
-                            <Trash2 size={18} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                            <td style={{ padding: '10px 14px', fontWeight: 'bold', color: '#64748b' }}>
+                              {idx + 1}
+                            </td>
+                            <td style={{ padding: '10px 14px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <strong style={{ color: '#0f172a' }}>{item.studentName}</strong>
+                                <span style={{ fontSize: '0.68rem', background: '#ffedd5', color: '#c2410c', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>
+                                  ⚡ Pix Direto
+                                </span>
+                              </div>
+                              <div style={{ fontSize: '0.78rem', color: '#64748b', display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap', marginTop: '2px' }}>
+                                {item.grade ? <span>Série/Turma: {item.grade}</span> : null}
+                                {item.enrollmentNumber ? <span>• Mat: {item.enrollmentNumber}</span> : null}
+                              </div>
+                            </td>
+                            <td style={{ padding: '10px 14px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <span style={{ fontWeight: 700, color: '#64748b' }}>R$</span>
+                                <input
+                                  type="text"
+                                  className="form-input"
+                                  value={item.amountInput}
+                                  onChange={(e) => handleAmountChange(item.studentId, e.target.value)}
+                                  placeholder="ex: 12.50 ou 5+3"
+                                  style={{ fontWeight: 800, fontSize: '1rem', color: '#ea580c', width: '90px' }}
+                                />
+                              </div>
+                            </td>
+                            <td style={{ padding: '10px 14px' }}>
+                              <div style={{ fontSize: '0.8rem', color: '#334155', fontWeight: 600, marginBottom: '2px' }}>
+                                {item.guardianName ? `Resp: ${item.guardianName}` : 'Responsável'}
+                              </div>
+                              <input
+                                type="text"
+                                className="form-input"
+                                placeholder="(99) 99999-9999"
+                                value={item.guardianPhone || ''}
+                                onChange={(e) => handleUpdateGuardianPhone(item.studentId, e.target.value)}
+                                style={{
+                                  fontSize: '0.8rem',
+                                  padding: '3px 8px',
+                                  width: '100%',
+                                  maxWidth: '160px',
+                                  borderColor: !item.guardianPhone ? '#fca5a5' : '#cbd5e1',
+                                }}
+                              />
+                            </td>
+                            <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                              {item.waSent ? (
+                                <span style={{ background: '#dcfce7', color: '#166534', fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                  <Check size={12} /> Aberto
+                                </span>
+                              ) : (
+                                <span style={{ background: '#fef3c7', color: '#92400e', fontSize: '0.72rem', fontWeight: 700, padding: '3px 8px', borderRadius: '6px' }}>
+                                  Pendente
+                                </span>
+                              )}
+                            </td>
+                            <td style={{ padding: '10px 14px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSendPixWhatsApp(item)}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    background: '#16a34a',
+                                    border: '1px solid #16a34a',
+                                    color: '#ffffff',
+                                    fontWeight: 700,
+                                    fontSize: '0.76rem',
+                                    padding: '5px 9px',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer',
+                                  }}
+                                  title="Abrir WhatsApp com mensagem e chave Pix pronta"
+                                >
+                                  <Share2 size={13} /> Cobrar no Zap
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyPixMessage(item)}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                    background: '#f8fafc',
+                                    border: '1px solid #cbd5e1',
+                                    color: '#475569',
+                                    fontWeight: 600,
+                                    fontSize: '0.74rem',
+                                    padding: '5px 7px',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer',
+                                  }}
+                                  title="Copiar mensagem de cobrança com chave Pix"
+                                >
+                                  <Copy size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleItemBillingType(item.studentId)}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                    background: '#f0fdf4',
+                                    border: '1px solid #86efac',
+                                    color: '#15803d',
+                                    fontWeight: 600,
+                                    fontSize: '0.72rem',
+                                    padding: '5px 7px',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer',
+                                  }}
+                                  title="Mudar este aluno para Crediário"
+                                >
+                                  <ArrowRightLeft size={12} /> p/ Crediário
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-ghost"
+                                  onClick={() => handleRemoveItem(item.studentId)}
+                                  title="Remover da lista"
+                                  style={{ color: '#ef4444', padding: '4px' }}
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Conteúdo da Aba Crediário */}
+            {scannedTab === 'crediario' && (
+              <>
+                {crediarioItems.length === 0 ? (
+                  <div
+                    style={{
+                      border: '2px dashed var(--border-color, #cbd5e1)',
+                      borderRadius: '12px',
+                      padding: '2.5rem',
+                      textAlign: 'center',
+                      color: 'var(--text-muted, #64748b)',
+                    }}
+                  >
+                    <Camera size={36} style={{ margin: '0 auto 0.5rem auto', color: '#94a3b8' }} />
+                    <strong>Nenhum consumo de crediário na lista.</strong>
+                    <p style={{ fontSize: '0.82rem', margin: '4px 0 0 0' }}>
+                      Tire uma foto da folha ou verifique a aba "Pix Direto do Dia".
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{ border: '1px solid var(--border-color, #e2e8f0)', borderRadius: '12px', overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--bg-hover, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)', textAlign: 'left' }}>
+                          <th style={{ padding: '10px 14px', width: '50px' }}>#</th>
+                          <th style={{ padding: '10px 14px' }}>Aluno / Matrícula</th>
+                          <th style={{ padding: '10px 14px', width: '220px' }}>Valor Consumido (R$)</th>
+                          <th style={{ padding: '10px 14px', width: '170px', textAlign: 'center' }}>Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {crediarioItems.map((item, idx) => (
+                          <tr
+                            key={item.studentId}
+                            style={{
+                              borderBottom: '1px solid var(--border-color, #f1f5f9)',
+                              background: idx === 0 ? '#f0fdf4' : 'var(--bg-card, #ffffff)',
+                            }}
+                          >
+                            <td style={{ padding: '10px 14px', fontWeight: 'bold', color: '#64748b' }}>
+                              {idx + 1}
+                            </td>
+                            <td style={{ padding: '10px 14px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <strong style={{ color: 'var(--text-main)' }}>{item.studentName}</strong>
+                                {item.confidence === 'high' && (
+                                  <span style={{ fontSize: '0.68rem', background: '#dcfce7', color: '#15803d', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>
+                                    IA 100%
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap', marginTop: '2px' }}>
+                                {item.grade ? <span>Série/Turma: {item.grade}</span> : null}
+                                {item.enrollmentNumber ? <span>• Matrícula: {item.enrollmentNumber}</span> : null}
+                                {item.isFirstTimeCredit ? (
+                                  <span style={{ fontSize: '0.7rem', background: '#fef3c7', color: '#b45309', padding: '1px 6px', borderRadius: '4px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                    🌟 1ª Vez no Crediário
+                                  </span>
+                                ) : (item.totalDebt || 0) > 0 ? (
+                                  <span style={{ fontSize: '0.7rem', background: '#fee2e2', color: '#dc2626', padding: '1px 6px', borderRadius: '4px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                    📋 Débito anterior: {formatCurrency(item.totalDebt || 0)}
+                                  </span>
+                                ) : (
+                                  <span style={{ fontSize: '0.7rem', background: '#f1f5f9', color: '#475569', padding: '1px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                    Histórico OK (R$ 0)
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td style={{ padding: '10px 14px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <span style={{ fontWeight: 700, color: 'var(--text-muted)' }}>R$</span>
+                                <input
+                                  ref={(el) => {
+                                    inputRefs.current[item.studentId] = el;
+                                  }}
+                                  type="text"
+                                  className="form-input"
+                                  value={item.amountInput}
+                                  onChange={(e) => handleAmountChange(item.studentId, e.target.value)}
+                                  placeholder="ex: 12.50 ou 5+3"
+                                  style={{ fontWeight: 800, fontSize: '1rem', color: '#16a34a' }}
+                                />
+                              </div>
+                            </td>
+                            <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', justifyContent: 'center' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleItemBillingType(item.studentId)}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    background: '#fff7ed',
+                                    border: '1px solid #fed7aa',
+                                    color: '#c2410c',
+                                    fontWeight: 700,
+                                    fontSize: '0.72rem',
+                                    padding: '4px 8px',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer',
+                                  }}
+                                  title="Mover este consumo para a lista de Pix Direto do dia"
+                                >
+                                  <ArrowRightLeft size={12} /> p/ Pix Direto ⚡
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-ghost"
+                                  onClick={() => handleRemoveItem(item.studentId)}
+                                  title="Remover aluno"
+                                  style={{ color: '#ef4444', padding: '4px' }}
+                                >
+                                  <Trash2 size={18} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -1733,35 +2376,42 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
             gap: '1rem',
           }}
         >
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={handleExportCSV}
-            disabled={scannedItems.length === 0}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.88rem' }}
-          >
-            <Download size={18} /> Exportar Planilha CSV
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={handleExportCSV}
+              disabled={scannedItems.length === 0}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.88rem' }}
+            >
+              <Download size={18} /> Exportar Planilha CSV
+            </button>
+            <div style={{ fontSize: '0.82rem', color: '#64748b' }}>
+              Crediário: <strong style={{ color: '#16a34a' }}>{formatCurrency(grandTotalCrediario)}</strong> ({crediarioItems.length}) • Pix Direto: <strong style={{ color: '#ea580c' }}>{formatCurrency(grandTotalPixDireto)}</strong> ({pixDiretoItems.length})
+            </div>
+          </div>
 
-          <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
             <button type="button" className="btn btn-secondary" onClick={onClose}>
-              Cancelar
+              Fechar
             </button>
             <button
               type="button"
               className="btn btn-primary"
               onClick={handleSaveBatch}
-              disabled={scannedItems.length === 0 || submitting}
+              disabled={crediarioItems.length === 0 || submitting}
+              title="Lança apenas os consumos de Crediário no sistema (Alunos Pix Direto não são lançados)"
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.5rem',
                 fontWeight: 700,
                 padding: '0.7rem 1.5rem',
-                background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
-                borderColor: '#16a34a',
+                background: crediarioItems.length === 0 ? '#94a3b8' : 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                borderColor: crediarioItems.length === 0 ? '#94a3b8' : '#16a34a',
                 color: '#ffffff',
-                boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)',
+                boxShadow: crediarioItems.length === 0 ? 'none' : '0 4px 12px rgba(22, 163, 74, 0.25)',
+                cursor: crediarioItems.length === 0 ? 'not-allowed' : 'pointer',
               }}
             >
               {submitting ? (
@@ -1770,7 +2420,7 @@ export const CameraQRScannerModal: React.FC<CameraQRScannerModalProps> = ({
                 </>
               ) : (
                 <>
-                  <Send size={18} /> Lançar Todos no Sistema ({scannedItems.length})
+                  <Send size={18} /> Lançar Crediário no Sistema ({crediarioItems.length})
                 </>
               )}
             </button>

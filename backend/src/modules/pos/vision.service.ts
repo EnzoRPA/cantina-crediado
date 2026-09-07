@@ -13,6 +13,10 @@ export interface ExtractedSheetItem {
   raw_text?: string;
   confidence: 'high' | 'medium' | 'low';
   match_source?: 'matricula' | 'learned_alias' | 'exact_name' | 'partial_name' | 'first_name_grade' | 'fuzzy';
+  billing_type?: 'pix_direto' | 'crediario';
+  guardian_name?: string;
+  guardian_phone?: string;
+  payment_method_sheet?: 'pix' | 'fiado';
 }
 
 export interface SuggestedStudent {
@@ -22,6 +26,9 @@ export interface SuggestedStudent {
   class_group?: string;
   enrollment_number?: string;
   similarity: number;
+  billing_type?: 'pix_direto' | 'crediario';
+  guardian_name?: string;
+  guardian_phone?: string;
 }
 
 export interface UnrecognizedSheetItem {
@@ -30,6 +37,7 @@ export interface UnrecognizedSheetItem {
   raw_matricula?: string;
   raw_amount_text?: string;
   amount: number;
+  payment_method_sheet?: 'pix' | 'fiado';
   suggested_students: SuggestedStudent[];
 }
 
@@ -156,6 +164,10 @@ export class VisionService {
         's.grade',
         's.class_group',
         's.enrollment_number',
+        's.billing_type',
+        's.guardian_name',
+        's.guardian_phone',
+        'u.phone as student_phone',
       ]);
 
     // 3. Buscar os aliases e caligrafias/grafias aprendidas anteriormente nesta escola
@@ -509,8 +521,10 @@ Responda ESTRITAMENTE em formato JSON com o seguinte esquema (sem blocos markdow
       }
 
       // 7. Resultado do item:
+      const paymentFromSheet = item.pagamento === 'pix' ? 'pix' : 'fiado';
       if (foundStudent) {
         // Encontrou aluno com boa confiança
+        const isPixDireto = paymentFromSheet === 'pix' || foundStudent.billing_type === 'pix_direto';
         matchedItems.push({
           student_id: foundStudent.student_id,
           student_name: foundStudent.student_name,
@@ -520,6 +534,10 @@ Responda ESTRITAMENTE em formato JSON com o seguinte esquema (sem blocos markdow
           raw_text: item.valor_raw || rawName,
           confidence,
           match_source: matchSource,
+          billing_type: isPixDireto ? 'pix_direto' : 'crediario',
+          guardian_name: foundStudent.guardian_name,
+          guardian_phone: foundStudent.guardian_phone || foundStudent.student_phone,
+          payment_method_sheet: paymentFromSheet,
         });
       } else {
         // NUNCA DESPREZAR: Aluno não reconhecido automaticamente, mas tem valor!
@@ -545,6 +563,9 @@ Responda ESTRITAMENTE em formato JSON com o seguinte esquema (sem blocos markdow
             class_group: s.class_group,
             enrollment_number: s.enrollment_number,
             similarity: Math.round(sim * 100) / 100,
+            billing_type: s.billing_type,
+            guardian_name: s.guardian_name,
+            guardian_phone: s.guardian_phone || s.student_phone,
           };
         });
 
@@ -560,6 +581,7 @@ Responda ESTRITAMENTE em formato JSON com o seguinte esquema (sem blocos markdow
           raw_matricula: itemMatricula || (itemSerie ? `Série: ${itemSerie}` : undefined),
           raw_amount_text: item.valor_raw,
           amount: roundedAmount,
+          payment_method_sheet: paymentFromSheet,
           suggested_students: suggestions,
         });
 
