@@ -43,6 +43,32 @@ async function bootstrap() {
     } catch (colErr) {
       logger.warn({ colErr }, '⚠️ Could not verify/add billing_type column');
     }
+
+    // ── Hard guarantee: ensure student_aliases table exists ───────────
+    try {
+      const hasAliasesTable = await db.schema.hasTable('student_aliases');
+      if (!hasAliasesTable) {
+        logger.info('➕ Creating missing student_aliases table...');
+        await db.schema.createTable('student_aliases', (table) => {
+          table.uuid('id').primary().defaultTo(db.raw('gen_random_uuid()'));
+          table.uuid('school_id').notNullable().references('id').inTable('schools').onDelete('CASCADE');
+          table.uuid('student_id').notNullable().references('id').inTable('students').onDelete('CASCADE');
+          table.string('alias', 255).notNullable();
+          table.string('raw_alias', 255).notNullable();
+          table.string('source', 50).defaultTo('vision_learned');
+          table.timestamps(true, true);
+
+          table.unique(['school_id', 'alias']);
+        });
+        await db.schema.raw('CREATE INDEX IF NOT EXISTS idx_student_aliases_school ON student_aliases(school_id)').catch(() => {});
+        await db.schema.raw('CREATE INDEX IF NOT EXISTS idx_student_aliases_student ON student_aliases(student_id)').catch(() => {});
+        logger.info('✅ student_aliases table created successfully');
+      } else {
+        logger.info('✅ student_aliases table already exists');
+      }
+    } catch (aliasErr) {
+      logger.warn({ aliasErr }, '⚠️ Could not verify/create student_aliases table');
+    }
     // ───────────────────────────────────────────────────────────────────
 
     const server = app.listen(config.port, async () => {
