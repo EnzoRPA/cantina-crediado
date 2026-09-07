@@ -12,7 +12,7 @@ export interface ExtractedSheetItem {
   amount: number;
   raw_text?: string;
   confidence: 'high' | 'medium' | 'low';
-  match_source?: 'matricula' | 'learned_alias' | 'exact_name' | 'partial_name' | 'fuzzy';
+  match_source?: 'matricula' | 'learned_alias' | 'exact_name' | 'partial_name' | 'first_name_grade' | 'fuzzy';
 }
 
 export interface SuggestedStudent {
@@ -171,41 +171,56 @@ export class VisionService {
       logger.warn({ aliasErr }, 'Aviso: Tabela student_aliases indisponível ou erro ao consultar aliases');
     }
 
-    // 4. Montar Prompt com alta tolerância e instruções contra perda de dados
+    // 4. Montar Prompt de altíssima precisão com suporte a folhas impressas e tabelas manuscritas
     const systemPrompt = `
-Você é um leitor óptico e especialista de altíssima precisão em OCR e reconhecimento de escrita manuscrita para cantinas escolares.
+Você é um leitor óptico e especialista de altíssima precisão em OCR de escrita manuscrita em folhas de cantina escolar.
 A imagem enviada pode ser:
-1. Folha impressa padrão da cantina ("CANTINA ESCOLAR — FICHA DE CONSUMO FIADO (A PRAZO)") contendo linhas com Nome do Aluno, Matrícula, QR Code e uma caixa com "VALOR CONSUMIDO (R$)".
+1. Uma folha intitulada "RELAÇÃO DE VENDAS DA CANTINA" contendo as colunas:
+   - ALUNO/FUNCIONARIO: nome manuscrito do aluno, professor ou funcionário (ex: "Ayla", "Helena Lopes", "Isaac Paulo", "Teodoro", "Pr. Rocha", "Benjamin Lima", "Vitor Hugo", "Mateus / Helena Lopes")
+   - SERIE: número ou letra da turma/série (ex: "6", "7", "4", "1", "2", "3", "F")
+   - VALOR: número ou expressão matemática manuscrita (ex: "10", "9", "21", "5+7", "9+2", "11", "13", "4")
+   - PAGAMENTO: caixas de seleção "( ) fiado" e "( ) pix"
 OU
-2. Folha pautada de caderno, recibo manual ou ficha avulsa de anotações da cantina onde os nomes e valores de consumo diário foram anotados à mão com caneta ou lápis (ex: "Milena 15,00", "João V. 8", "Enzo - 12", "Biel 6A: 5,50").
+2. A folha impressa de ficha de consumo com QR Code ("CANTINA ESCOLAR — FICHA DE CONSUMO FIADO (A PRAZO)").
+OU
+3. Caderno pautado ou recibos manuais avulsos da cantina.
 
-INSTRUÇÕES ESSENCIAIS (MUITO IMPORTANTE):
-- NUNCA DESCARTE OU IGNORE uma linha se houver qualquer número ou valor de consumo anotado!
-- Se houver anotação de valor (ex: "12,50", "15", "8,00", "5+3", "7.00"), EXTRAIA OBRIGATORIAMENTE essa linha.
-- Se o nome do aluno estiver manuscrito, difícil de ler, abreviado, cortado ou com caligrafia irregular (ex: "Mylena", "Milena 6A", "Biel"), extraia EXATAMENTE as letras que conseguir ler no campo "nome". Não tente inventar outro nome nem ignore a linha.
-- Apenas ignore linhas onde a caixa/campo de valor estiver TOTALMENTE EM BRANCO (sem nenhum consumo anotado).
-
-Para cada consumo encontrado com valor numérico, retorne:
-- "matricula": número da matrícula se visível na linha (ex: "012122", "000010") ou deixe vazio ""
-- "nome": texto do nome ou grafia encontrada para aquele consumo (ex: "Milena 6A", "Abner Oliveira Amorim", "Enzo V")
-- "valor_raw": o texto exato do valor anotado (ex: "12,50", "15")
-- "valor": número decimal correspondente (ex: 12.50)
+INSTRUÇÕES CRÍTICAS E OBRIGATÓRIAS:
+1. Extraia CADA LINHA onde houver qualquer valor numérico anotado, de cima até o final da folha.
+2. NUNCA IGNORE uma linha se houver valor anotado!
+3. Se a linha estiver claramente riscada com um traço/caneta azul sobre o nome ou valor (cancelada), marque "riscado": true. Se não estiver riscada, "riscado": false.
+4. Se o valor for uma expressão matemática com soma (ex: "5+7", "9+2"), mantenha em "valor_raw" a expressão original (ex: "5+7") e em "valor" o resultado somado (ex: 12.0).
+5. Se a coluna PAGAMENTO tiver a caixa [X] pix marcada, marque "pagamento": "pix". Se estiver desmarcada ou fiado, marque "pagamento": "fiado".
+6. Extraia a série/turma no campo "serie" (ex: "6", "7", "4", "1").
+7. Extraia o nome ou apelido como estiver escrito na folha no campo "nome".
 
 Responda ESTRITAMENTE em formato JSON com o seguinte esquema (sem blocos markdown adicionais):
 {
   "consumos": [
     {
-      "matricula": "012122",
-      "nome": "Milena 6A",
-      "valor_raw": "12,50",
-      "valor": 12.50
+      "nome": "Ayla",
+      "serie": "6",
+      "matricula": "",
+      "valor_raw": "10",
+      "valor": 10.0,
+      "pagamento": "fiado",
+      "riscado": false
     }
   ]
 }
 `;
 
     // 5. Descobrir dinamicamente os modelos habilitados para a chave informada
-    let modelsToTry = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-1.5-flash-8b', 'gemini-1.5-pro'];
+    let modelsToTry = [
+      'gemini-3.6-flash',
+      'gemini-3.7-flash',
+      'gemini-flash-latest',
+      'gemini-2.5-flash-lite',
+      'gemini-3.5-flash',
+      'gemini-3-flash-preview',
+      'gemini-2.5-flash',
+      'gemini-2.5-pro',
+    ];
 
     try {
       const listResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
@@ -297,7 +312,17 @@ Responda ESTRITAMENTE em formato JSON com o seguinte esquema (sem blocos markdow
 
     logger.info({ rawText }, 'Resposta do Gemini Vision recebida');
 
-    let parsedResult: { consumos: Array<{ matricula?: string; nome?: string; valor_raw?: string; valor?: number }> } = {
+    let parsedResult: {
+      consumos: Array<{
+        matricula?: string;
+        nome?: string;
+        serie?: string;
+        valor_raw?: string;
+        valor?: number;
+        pagamento?: string;
+        riscado?: boolean;
+      }>;
+    } = {
       consumos: [],
     };
 
@@ -315,11 +340,21 @@ Responda ESTRITAMENTE em formato JSON com o seguinte esquema (sem blocos markdow
     const matchedItems: ExtractedSheetItem[] = [];
     const unrecognizedItems: UnrecognizedSheetItem[] = [];
 
-    // 6. Cruzamento em camadas inteligentes (Matrícula -> Aliases Memorizados -> Nome -> Fuzzy)
+    // 6. Cruzamento em camadas inteligentes (Matrícula -> Aliases -> Nome Completo -> Primeiro Nome + Série -> Fuzzy)
     for (const item of rawList) {
+      // Se a linha foi explicitamente riscada com caneta (cancelada), ignorar
+      if (item.riscado) {
+        logger.info({ item }, 'Linha riscada/cancelada na folha ignorada');
+        continue;
+      }
+
       const rawName = (item.nome || '').trim();
-      const itemNome = normalizeText(rawName);
+      let itemNome = normalizeText(rawName);
+      // Remover prefixos comuns de professores/tios se houver
+      itemNome = itemNome.replace(/^(pr|prof|profa|tia|tio)\s+/, '');
+
       const itemMatricula = (item.matricula || '').trim();
+      const itemSerie = normalizeText(item.serie || '');
       const parsedAmount = typeof item.valor === 'number' ? item.valor : parseFloat(String(item.valor_raw || '0').replace(',', '.'));
 
       // Pular apenas se o valor não for número positivo
@@ -328,7 +363,7 @@ Responda ESTRITAMENTE em formato JSON com o seguinte esquema (sem blocos markdow
       const roundedAmount = Math.round(parsedAmount * 100) / 100;
       let foundStudent: any = null;
       let confidence: 'high' | 'medium' | 'low' = 'low';
-      let matchSource: 'matricula' | 'learned_alias' | 'exact_name' | 'partial_name' | 'fuzzy' | undefined;
+      let matchSource: 'matricula' | 'learned_alias' | 'exact_name' | 'partial_name' | 'first_name_grade' | 'fuzzy' | undefined;
 
       // Camada 1: Matrícula
       if (itemMatricula) {
@@ -366,32 +401,83 @@ Responda ESTRITAMENTE em formato JSON com o seguinte esquema (sem blocos markdow
         }
       }
 
-      // Camada 4: Primeiro e Último Nome (para nomes compostos)
+      // Camada 4: Primeiro e Último Nome (para anotações com dois nomes, ex: "Helena Lopes", "Isaac Paulo")
       if (!foundStudent && itemNome) {
         const parts = itemNome.split(/\s+/).filter(Boolean);
         if (parts.length >= 2) {
           const first = parts[0];
           const last = parts[parts.length - 1];
-          const candidates = schoolStudents.filter((s) => {
+          let candidates = schoolStudents.filter((s) => {
             const norm = normalizeText(s.student_name);
             return norm.includes(first) && norm.includes(last);
           });
+
+          // Se tiver mais de um candidato mas a série foi identificada, filtrar pela série
+          if (candidates.length > 1 && itemSerie) {
+            const gradeFiltered = candidates.filter((s) => {
+              const gradeNorm = normalizeText(s.grade || '');
+              return gradeNorm.includes(itemSerie) || (s.class_group && normalizeText(s.class_group).includes(itemSerie));
+            });
+            if (gradeFiltered.length === 1) {
+              candidates = gradeFiltered;
+            }
+          }
+
           if (candidates.length === 1) {
             foundStudent = candidates[0];
-            confidence = 'medium';
+            confidence = 'high';
             matchSource = 'partial_name';
           }
         }
       }
 
-      // Camada 5: Similaridade Direta (Fuzzy Matching para pequenos erros de OCR)
+      // Camada 5: Primeiro Nome + Série (Essencial para anotações do dia a dia, ex: "Ayla" série "6", "Teodoro" série "4")
+      if (!foundStudent && itemNome) {
+        const firstName = itemNome.split(/\s+/)[0];
+        if (firstName.length >= 3) {
+          const candidatesByFirst = schoolStudents.filter((s) => {
+            const norm = normalizeText(s.student_name);
+            const firstOfStudent = norm.split(/\s+/)[0];
+            return firstOfStudent === firstName || norm.startsWith(firstName + ' ');
+          });
+
+          if (candidatesByFirst.length > 0) {
+            // Se houver série anotada na folha (ex: "6", "4", "1"), filtrar pela turma
+            if (itemSerie) {
+              const matchWithGrade = candidatesByFirst.filter((s) => {
+                const gradeNorm = normalizeText(s.grade || '');
+                return gradeNorm.includes(itemSerie) || (s.class_group && normalizeText(s.class_group).includes(itemSerie));
+              });
+              if (matchWithGrade.length === 1) {
+                foundStudent = matchWithGrade[0];
+                confidence = 'high';
+                matchSource = 'first_name_grade';
+              }
+            }
+
+            // Se ainda não achou e só existe 1 único aluno na escola com esse primeiro nome
+            if (!foundStudent && candidatesByFirst.length === 1) {
+              foundStudent = candidatesByFirst[0];
+              confidence = 'high';
+              matchSource = 'first_name_grade';
+            }
+          }
+        }
+      }
+
+      // Camada 6: Similaridade Direta (Fuzzy Matching para pequenos erros de OCR ou caligrafia)
       if (!foundStudent && itemNome.length >= 3) {
         let bestScore = 0;
         let bestCandidate: any = null;
         let secondBestScore = 0;
 
         for (const s of schoolStudents) {
-          const score = calculateSimilarity(itemNome, s.student_name);
+          let score = calculateSimilarity(itemNome, s.student_name);
+          // Bônus se a série bater com a turma do aluno
+          if (itemSerie && s.grade && normalizeText(s.grade).includes(itemSerie)) {
+            score = Math.min(1, score + 0.1);
+          }
+
           if (score > bestScore) {
             secondBestScore = bestScore;
             bestScore = score;
@@ -403,7 +489,7 @@ Responda ESTRITAMENTE em formato JSON com o seguinte esquema (sem blocos markdow
 
         // Também testa similaridade contra aliases cadastrados
         for (const a of schoolAliases) {
-          const score = calculateSimilarity(itemNome, a.raw_alias);
+          let score = calculateSimilarity(itemNome, a.raw_alias);
           if (score > bestScore) {
             const studentFromAlias = schoolStudents.find((s) => s.student_id === a.student_id);
             if (studentFromAlias) {
@@ -414,8 +500,8 @@ Responda ESTRITAMENTE em formato JSON com o seguinte esquema (sem blocos markdow
           }
         }
 
-        // Se encontrou com alta similaridade (>= 0.86) e boa separação do segundo colocado
-        if (bestCandidate && bestScore >= 0.86 && (bestScore - secondBestScore >= 0.12 || bestScore >= 0.92)) {
+        // Se encontrou com boa similaridade (>= 0.82) e boa separação
+        if (bestCandidate && bestScore >= 0.82 && (bestScore - secondBestScore >= 0.10 || bestScore >= 0.90)) {
           foundStudent = bestCandidate;
           confidence = 'medium';
           matchSource = 'fuzzy';
@@ -424,7 +510,7 @@ Responda ESTRITAMENTE em formato JSON com o seguinte esquema (sem blocos markdow
 
       // 7. Resultado do item:
       if (foundStudent) {
-        // Encontrou aluno com certeza/boa confiança
+        // Encontrou aluno com boa confiança
         matchedItems.push({
           student_id: foundStudent.student_id,
           student_name: foundStudent.student_name,
@@ -437,10 +523,15 @@ Responda ESTRITAMENTE em formato JSON com o seguinte esquema (sem blocos markdow
         });
       } else {
         // NUNCA DESPREZAR: Aluno não reconhecido automaticamente, mas tem valor!
-        // Calcular as melhores sugestões entre todos os alunos da escola
+        // Calcular as melhores sugestões entre todos os alunos da escola considerando também a série
         const scoredStudents: SuggestedStudent[] = schoolStudents.map((s) => {
           let sim = calculateSimilarity(itemNome, s.student_name);
-          // Verificar se tem alias correspondente
+
+          // Bônus se a série/turma bater
+          if (itemSerie && s.grade && normalizeText(s.grade).includes(itemSerie)) {
+            sim = Math.min(1, sim + 0.15);
+          }
+
           const matchingAlias = schoolAliases.filter((a) => a.student_id === s.student_id);
           for (const al of matchingAlias) {
             const aliasSim = calculateSimilarity(itemNome, al.raw_alias);
@@ -453,7 +544,7 @@ Responda ESTRITAMENTE em formato JSON com o seguinte esquema (sem blocos markdow
             grade: s.grade,
             class_group: s.class_group,
             enrollment_number: s.enrollment_number,
-            similarity: sim,
+            similarity: Math.round(sim * 100) / 100,
           };
         });
 
@@ -466,15 +557,15 @@ Responda ESTRITAMENTE em formato JSON com o seguinte esquema (sem blocos markdow
         unrecognizedItems.push({
           temp_id: uuidv4(),
           raw_name: rawName || 'Não identificado',
-          raw_matricula: itemMatricula || undefined,
+          raw_matricula: itemMatricula || (itemSerie ? `Série: ${itemSerie}` : undefined),
           raw_amount_text: item.valor_raw,
           amount: roundedAmount,
           suggested_students: suggestions,
         });
 
         logger.info(
-          { rawName, amount: roundedAmount, topSuggestion: suggestions[0]?.student_name },
-          '⚠️ Consumo retido como Não Reconhecido para revisão manual do usuário'
+          { rawName, amount: roundedAmount, itemSerie, topSuggestion: suggestions[0]?.student_name },
+          '⚠️ Consumo retido como Não Reconhecido para confirmação com 1 clique'
         );
       }
     }
