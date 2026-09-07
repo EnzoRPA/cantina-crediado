@@ -1124,6 +1124,8 @@ export default function OnCreditPage() {
   // Apply type filters + search + sort
   const filtered = (() => {
     let list = debts.filter(d => {
+      if (d.billing_type === 'pix_direto') return false;
+
       // Type filters
       const hasDiabet = d.total_debt > 0;
       const hasCredit = (d.balance || 0) > 0 && d.total_debt === 0;
