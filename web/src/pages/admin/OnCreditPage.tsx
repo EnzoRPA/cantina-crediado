@@ -1265,7 +1265,7 @@ export default function OnCreditPage() {
                 <button
                   type="button"
                   className="btn"
-                  onClick={() => setIsCameraScannerModalOpen(true)}
+                  onClick={async () => { await loadDebts(); setIsCameraScannerModalOpen(true); }}
                   style={{
                     background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
                     color: '#ffffff',
