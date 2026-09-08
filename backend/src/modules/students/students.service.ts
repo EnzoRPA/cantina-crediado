@@ -88,11 +88,6 @@ export class StudentsService {
     const [{ count }] = await baseQuery.clone().count('* as count');
     const total = Number(count);
 
-    const isPostgres = db.client.config.client === 'pg';
-    const subqueryGuardians = isPostgres
-      ? "(SELECT string_agg(u2.name, ', ') FROM student_guardians sg2 JOIN guardians g2 ON sg2.guardian_id = g2.id JOIN users u2 ON g2.user_id = u2.id WHERE sg2.student_id = s.id)"
-      : "(SELECT group_concat(u2.name, ', ') FROM student_guardians sg2 JOIN guardians g2 ON sg2.guardian_id = g2.id JOIN users u2 ON g2.user_id = u2.id WHERE sg2.student_id = s.id)";
-
     const data = await baseQuery
       .select(
         's.id', 'u.name', 'u.email', 'u.phone',
@@ -101,9 +96,7 @@ export class StudentsService {
         's.cpf', 's.gender', 's.address_full',
         's.guardian_name', 's.guardian_cpf', 's.guardian_rg', 's.guardian_phone',
         's.is_marketing_sent',
-        's.created_at', 's.updated_at',
-        db.raw(`(SELECT COUNT(*) FROM student_guardians WHERE student_id = s.id) as guardian_count`),
-        db.raw(`${subqueryGuardians} as linked_guardian_names`)
+        's.created_at', 's.updated_at'
       )
       .orderBy(sortColumn, sortOrder)
       .limit(limit)
