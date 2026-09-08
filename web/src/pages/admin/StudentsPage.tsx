@@ -427,9 +427,12 @@ export default function StudentsPage() {
 
     if (!search.trim()) return true;
 
-    const fullSearch = search.toLowerCase().trim();
-    const searchableText = `${s.name || ''} ${s.enrollment_number || ''} ${s.grade || ''} ${s.class_group || ''} ${s.cpf || ''} ${s.guardian_name || ''}`.toLowerCase();
-    
+    const normalize = (str: string) =>
+      (str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[º°]/g, '').trim();
+
+    const fullSearch = normalize(search);
+    const searchableText = normalize(`${s.name || ''} ${s.enrollment_number || ''} ${s.grade || ''} ${s.class_group || ''} ${s.cpf || ''} ${s.guardian_name || ''}`);
+
     if (searchableText.includes(fullSearch)) return true;
 
     const terms = fullSearch.split(/\s+/).filter(Boolean);

@@ -14,6 +14,7 @@ import SettingsPage from './pages/admin/SettingsPage';
 import OnCreditPage from './pages/admin/OnCreditPage';
 import FiadoScannerPage from './pages/admin/FiadoScannerPage';
 import ToastContainer from './components/common/Toast';
+import { keepAliveService } from './services/keepAlive';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -39,12 +40,19 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode,
 
 export default function App() {
   useEffect(() => {
+    // Inicia heartbeat para manter Render ativo a cada 5 segundos
+    keepAliveService.start(5000);
+
     const savedTheme = localStorage.getItem('cantina-theme') || 'default';
     if (savedTheme === 'default') {
       document.documentElement.removeAttribute('data-theme');
     } else {
       document.documentElement.setAttribute('data-theme', savedTheme);
     }
+
+    return () => {
+      keepAliveService.stop();
+    };
   }, []);
 
   return (

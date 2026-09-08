@@ -58,18 +58,9 @@ app.use('/uploads', (req, res, next) => {
   next();
 }, express.static(uploadsPath));
 
-// ---- Rate Limiting ----
-app.use('/api/', generalLimiter);
-
-// ---- Request Logging ----
-app.use((req, _res, next) => {
-  logger.debug({ method: req.method, path: req.path }, 'Incoming request');
-  next();
-});
-
-// ---- Health Check ----
-app.get('/api/health', (_req, res) => {
-  res.json({
+// ---- Health Check (Exempt from rate limiting for 5s keep-alive) ----
+const handleHealth = (_req: express.Request, res: express.Response) => {
+  res.status(200).json({
     success: true,
     data: {
       status: 'healthy',
@@ -78,6 +69,18 @@ app.get('/api/health', (_req, res) => {
       environment: config.env,
     },
   });
+};
+app.get('/health', handleHealth);
+app.get('/api/health', handleHealth);
+
+// ---- Rate Limiting ----
+app.use('/api/', generalLimiter);
+
+// ---- Request Logging ----
+app.use((req, _res, next) => {
+  if (req.path === '/health' || req.path === '/api/health') return next();
+  logger.debug({ method: req.method, path: req.path }, 'Incoming request');
+  next();
 });
 
 // ---- API Routes ----

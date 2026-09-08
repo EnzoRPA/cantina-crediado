@@ -7,6 +7,7 @@ import {
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { authApi } from '../services/api';
+import { ServerStatusBadge } from '../components/common/ServerStatusBadge';
 import './AdminLayout.css';
 
 const menuItems = [
@@ -133,6 +134,12 @@ export default function AdminLayout() {
         </nav>
 
         <div className="sidebar-footer">
+          {(!collapsed || mobileOpen) && (
+            <div style={{ padding: '0 8px 10px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 500 }}>Status API</span>
+              <ServerStatusBadge />
+            </div>
+          )}
           <div className="sidebar-user">
             <div className="sidebar-user-avatar">
               {user?.name?.charAt(0) || 'A'}
@@ -160,8 +167,11 @@ export default function AdminLayout() {
             <Coffee size={20} />
             <span>Cantina Admin</span>
           </div>
-          <div className="mobile-user-avatar">
-            {user?.name?.charAt(0) || 'A'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <ServerStatusBadge compact />
+            <div className="mobile-user-avatar">
+              {user?.name?.charAt(0) || 'A'}
+            </div>
           </div>
         </div>
 

@@ -15,6 +15,7 @@
     "db:rollback": "pnpm --filter backend db:rollback",
     "test": "pnpm --filter backend test",
     "lint": "pnpm -r lint",
+    "keep-alive": "node scripts/keep-render-awake.mjs",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down"
   },
