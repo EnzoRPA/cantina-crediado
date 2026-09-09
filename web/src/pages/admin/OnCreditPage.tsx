@@ -177,6 +177,13 @@ function isChargedYesterday(studentId: string): boolean {
   return ts.startsWith(yesterdayStr);
 }
 
+function isScheduledFuture(studentId: string): boolean {
+  const rechargeDate = getRechargeDate(studentId);
+  if (!rechargeDate) return false;
+  const today = new Date().toISOString().split('T')[0];
+  return rechargeDate > today;
+}
+
 export default function OnCreditPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
@@ -200,7 +207,7 @@ export default function OnCreditPage() {
   const [filterCredito, setFilterCredito] = useState(true);
   const [filterEmDia, setFilterEmDia] = useState(true);
   const [filterBillingType, setFilterBillingType] = useState<'all' | 'crediario' | 'pix_direto'>('all');
-  const [filterChargeStatus, setFilterChargeStatus] = useState<'all' | 'charged' | 'pending' | 'not_charged_yesterday'>('pending');
+  const [filterChargeStatus, setFilterChargeStatus] = useState<'all' | 'charged' | 'pending' | 'scheduled' | 'not_charged_yesterday'>('pending');
   const [chargedTodayVersion, setChargedTodayVersion] = useState(0);
 
   // Recharge Date Modal State
@@ -1672,10 +1679,11 @@ export default function OnCreditPage() {
                 </div>
 
                 {/* Filtro status de cobrança */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.4rem', marginTop: '0.75rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: '0.4rem', marginTop: '0.75rem' }}>
                   {([
                     { key: 'all' as const, label: 'Todos', color: '#6366f1', bg: '#eef2ff' },
                     { key: 'pending' as const, label: 'Não Cobrados', color: '#dc2626', bg: '#fef2f2' },
+                    { key: 'scheduled' as const, label: 'Agendados', color: '#d97706', bg: '#fffbeb' },
                     { key: 'charged' as const, label: 'Já Cobrados', color: '#16a34a', bg: '#f0fdf4' },
                     { key: 'not_charged_yesterday' as const, label: 'Não Cobrados Ontem', color: '#ea580c', bg: '#fff7ed' },
                   ]).map(opt => (
@@ -1729,17 +1737,22 @@ export default function OnCreditPage() {
                   if (filterBillingType !== 'all' && (d.billing_type || 'pix_direto') !== filterBillingType) return false;
                   return true;
                 }).sort((a, b) => sortCobrarAsc ? a.total_debt - b.total_debt : b.total_debt - a.total_debt);
-                const pendingList = cobraveis.filter(d => !isChargedToday(d.student_id));
-                const chargedList = cobraveis.filter(d => isChargedToday(d.student_id)).sort((a, b) => getChargedAt(b.student_id) - getChargedAt(a.student_id));
+                const chargedToday = cobraveis.filter(d => isChargedToday(d.student_id));
+                const notCharged = cobraveis.filter(d => !isChargedToday(d.student_id));
+                const pendingList = notCharged.filter(d => !isScheduledFuture(d.student_id));
+                const scheduledList = notCharged.filter(d => isScheduledFuture(d.student_id));
+                const chargedList = chargedToday.sort((a, b) => getChargedAt(b.student_id) - getChargedAt(a.student_id));
                 const notChargedYesterdayList = cobraveis.filter(d => !isChargedYesterday(d.student_id));
 
                 const filteredByStatus = filterChargeStatus === 'charged'
                   ? chargedList
                   : filterChargeStatus === 'pending'
                     ? pendingList
-                    : filterChargeStatus === 'not_charged_yesterday'
-                      ? notChargedYesterdayList
-                      : cobraveis;
+                    : filterChargeStatus === 'scheduled'
+                      ? scheduledList
+                      : filterChargeStatus === 'not_charged_yesterday'
+                        ? notChargedYesterdayList
+                        : cobraveis;
 
                 return (
                   <>
@@ -1752,8 +1765,7 @@ export default function OnCreditPage() {
                           <span style={{ fontSize: '0.75rem', color: '#dc2626', background: '#fee2e2', padding: '1px 6px', borderRadius: '10px', fontWeight: 700 }}>{pendingList.length}</span>
                         </div>
                         <div className="debts-cards-grid">
-                          {(filterChargeStatus === 'not_charged_yesterday' ? notChargedYesterdayList : pendingList).map(d => {
-                            const rechargeDate = getRechargeDate(d.student_id);
+                          {(filterChargeStatus === 'not_charged_yesterday' ? notChargedYesterdayList.filter(d => !isScheduledFuture(d.student_id)) : pendingList).map(d => {
                             return (
                             <div key={d.student_id} className="debt-student-card" style={{ flexDirection: 'column', alignItems: 'stretch', borderLeft: '3px solid #ef4444' }} onClick={() => handleSelectStudent(d)}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1771,15 +1783,67 @@ export default function OnCreditPage() {
                                       )}
                                     </div>
                                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{d.grade} {d.class_group}</div>
+                                  </div>
+                                </div>
+                                <div style={{ background: '#fee2e2', color: '#dc2626', fontWeight: 800, padding: '0.3rem 0.6rem', borderRadius: '6px', fontSize: '0.9rem' }}>
+                                  {formatCurrency(d.total_debt)}
+                                </div>
+                              </div>
+                              <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <button type="button" className="btn btn-sm btn-outline" style={{ borderColor: '#16a34a', color: '#16a34a', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700 }} onClick={(e) => { e.stopPropagation(); handleSendWhatsApp(d); }}>
+                                  <Send size={14} /> Cobrar via WhatsApp
+                                </button>
+                                <button type="button" className="btn btn-sm" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', color: '#ffffff', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, borderRadius: '6px' }} title="Enviar mensagem rápida apenas com o Pix Copia e Cola" onClick={(e) => { e.stopPropagation(); handleSendPixOnly(d); }}>
+                                  Só Pix (Copia e Cola)
+                                </button>
+                                <button type="button" className="btn btn-sm" style={{ background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', color: '#ffffff', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, borderRadius: '6px', fontSize: '0.78rem' }} title="Definir data para cobrar novamente" onClick={(e) => handleOpenRechargeDateModal(d, e)}>
+                                  Agendar Próx. Cobrança
+                                </button>
+                              </div>
+                            </div>
+                          )})}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Agendados */}
+                    {(filterChargeStatus === 'all' || filterChargeStatus === 'scheduled') && scheduledList.length > 0 && (
+                      <div style={{ marginBottom: '1.25rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.65rem', padding: '0.5rem 0.75rem', background: '#fffbeb', borderRadius: '8px', border: '1px solid #fde68a' }}>
+                          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#d97706' }} />
+                          <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#92400e' }}>Agendados</span>
+                          <span style={{ fontSize: '0.75rem', color: '#d97706', background: '#fef3c7', padding: '1px 6px', borderRadius: '10px', fontWeight: 700 }}>{scheduledList.length}</span>
+                        </div>
+                        <div className="debts-cards-grid">
+                          {scheduledList.map(d => {
+                            const rechargeDate = getRechargeDate(d.student_id);
+                            return (
+                            <div key={d.student_id} className="debt-student-card" style={{ flexDirection: 'column', alignItems: 'stretch', borderLeft: '3px solid #d97706', opacity: 0.9 }} onClick={() => handleSelectStudent(d)}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                  <div className="debt-card-avatar" style={{ background: '#fef3c7', color: '#d97706', fontWeight: 800 }}>
+                                    {d.student_name.slice(0, 2).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                      <strong style={{ fontSize: '0.95rem', color: 'var(--text-main)' }}>{d.student_name}</strong>
+                                      <span style={{ fontSize: '0.6rem', padding: '1px 5px', borderRadius: '4px', background: '#fef3c7', color: '#d97706', fontWeight: 700 }}>Agendado</span>
+                                      {d.billing_type === 'crediario' ? (
+                                        <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: '#dcfce7', color: '#15803d', fontWeight: 700 }}>Crediário</span>
+                                      ) : (
+                                        <span style={{ fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', background: '#e0f2fe', color: '#0369a1', fontWeight: 700 }}>Pix Direto</span>
+                                      )}
+                                    </div>
+                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{d.grade} {d.class_group}</div>
                                     {rechargeDate && (
-                                      <div style={{ fontSize: '0.72rem', color: '#ea580c', fontWeight: 600, marginTop: '2px' }}>
+                                      <div style={{ fontSize: '0.72rem', color: '#d97706', fontWeight: 600, marginTop: '2px' }}>
                                         Próxima cobrança: {new Date(rechargeDate + 'T12:00:00').toLocaleDateString('pt-BR')}
                                         <button type="button" onClick={(e) => handleClearRechargeDate(d.student_id, e)} style={{ marginLeft: '4px', background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 700, padding: 0, textDecoration: 'underline' }}>✕</button>
                                       </div>
                                     )}
                                   </div>
                                 </div>
-                                <div style={{ background: '#fee2e2', color: '#dc2626', fontWeight: 800, padding: '0.3rem 0.6rem', borderRadius: '6px', fontSize: '0.9rem' }}>
+                                <div style={{ background: '#fef3c7', color: '#d97706', fontWeight: 800, padding: '0.3rem 0.6rem', borderRadius: '6px', fontSize: '0.9rem' }}>
                                   {formatCurrency(d.total_debt)}
                                 </div>
                               </div>
@@ -1864,9 +1928,11 @@ export default function OnCreditPage() {
                             ? 'Nenhum aluno com débito pendente no momento.'
                             : filterChargeStatus === 'charged'
                               ? 'Nenhum aluno cobrado ainda hoje.'
-                              : filterChargeStatus === 'not_charged_yesterday'
-                                ? 'Todos os alunos com débito foram cobrados ontem.'
-                                : 'Todos os alunos já foram cobrados hoje!'}
+                              : filterChargeStatus === 'scheduled'
+                                ? 'Nenhum aluno com cobrança agendada.'
+                                : filterChargeStatus === 'not_charged_yesterday'
+                                  ? 'Todos os alunos com débito foram cobrados ontem.'
+                                  : 'Todos os alunos já foram cobrados hoje!'}
                         </p>
                       </div>
                     )}
