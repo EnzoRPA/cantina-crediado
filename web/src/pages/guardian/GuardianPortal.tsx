@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Coffee, LogOut, Users, Wallet, ArrowUpCircle,
+  Coffee, LogOut, Users, ArrowUpCircle,
   ShoppingCart, Clock, RefreshCw, CreditCard, BookOpen, ShieldCheck
 } from 'lucide-react';
 import { api, authApi, dailyLimitsApi } from '../../services/api';
