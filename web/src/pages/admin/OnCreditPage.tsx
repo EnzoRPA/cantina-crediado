@@ -1737,11 +1737,9 @@ export default function OnCreditPage() {
                   if (filterBillingType !== 'all' && (d.billing_type || 'pix_direto') !== filterBillingType) return false;
                   return true;
                 }).sort((a, b) => sortCobrarAsc ? a.total_debt - b.total_debt : b.total_debt - a.total_debt);
-                const chargedToday = cobraveis.filter(d => isChargedToday(d.student_id));
-                const notCharged = cobraveis.filter(d => !isChargedToday(d.student_id));
-                const pendingList = notCharged.filter(d => !isScheduledFuture(d.student_id));
-                const scheduledList = notCharged.filter(d => isScheduledFuture(d.student_id));
-                const chargedList = chargedToday.sort((a, b) => getChargedAt(b.student_id) - getChargedAt(a.student_id));
+                const scheduledList = cobraveis.filter(d => isScheduledFuture(d.student_id));
+                const pendingList = cobraveis.filter(d => !isScheduledFuture(d.student_id) && !isChargedToday(d.student_id));
+                const chargedList = cobraveis.filter(d => !isScheduledFuture(d.student_id) && isChargedToday(d.student_id)).sort((a, b) => getChargedAt(b.student_id) - getChargedAt(a.student_id));
                 const notChargedYesterdayList = cobraveis.filter(d => !isChargedYesterday(d.student_id));
 
                 const filteredByStatus = filterChargeStatus === 'charged'
