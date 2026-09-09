@@ -775,6 +775,74 @@ export class PaymentsService {
   }
 
   /**
+   * List guardian recharges — all approved online recharges grouped by guardian.
+   */
+  async listGuardianRecharges(schoolId: string) {
+    const rows = await db.raw(`
+      SELECT
+        u_guardian.name AS guardian_name,
+        u_guardian.phone AS guardian_phone,
+        u_student.name AS student_name,
+        s.enrollment_number,
+        s.grade,
+        s.class_group,
+        t.id AS transaction_id,
+        t.created_at AS transaction_date,
+        tp.amount,
+        tp.status AS payment_status,
+        t.status AS transaction_status
+      FROM transactions t
+      JOIN transaction_payments tp ON tp.transaction_id = t.id
+      JOIN students s ON s.id = t.student_id
+      JOIN users u_student ON u_student.id = s.user_id
+      LEFT JOIN student_guardians sg ON sg.student_id = s.id AND sg.is_primary = true
+      LEFT JOIN guardians g ON g.id = sg.guardian_id
+      LEFT JOIN users u_guardian ON u_guardian.id = g.user_id
+      WHERE t.notes = 'Recarga Online PIX'
+        AND t.school_id = ?
+        AND t.status = 'completed'
+        AND tp.status = 'approved'
+      ORDER BY t.created_at DESC
+    `, [schoolId]);
+
+    const data = rows.rows || [];
+
+    // Group by guardian
+    const grouped: Record<string, any> = {};
+    for (const r of data) {
+      const key = r.guardian_name || 'Desconhecido';
+      if (!grouped[key]) {
+        grouped[key] = {
+          guardian_name: r.guardian_name,
+          guardian_phone: r.guardian_phone,
+          total: 0,
+          recharges: [],
+        };
+      }
+      grouped[key].total += Number(r.amount);
+      grouped[key].recharges.push({
+        student_name: r.student_name,
+        enrollment_number: r.enrollment_number,
+        grade: r.grade,
+        class_group: r.class_group,
+        amount: Number(r.amount),
+        date: r.transaction_date,
+      });
+    }
+
+    const grandTotal = data.reduce((sum: number, r: any) => sum + Number(r.amount), 0);
+
+    return {
+      guardians: Object.values(grouped),
+      summary: {
+        total_guardians: Object.keys(grouped).length,
+        total_recharges: data.length,
+        grand_total: grandTotal,
+      },
+    };
+  }
+
+  /**
    * Manually approve a pending transaction payment (e.g. for Pix Fiado).
    */
   async approvePaymentManually(schoolId: string, transactionId: string): Promise<void> {

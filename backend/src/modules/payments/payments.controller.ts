@@ -54,6 +54,13 @@ export class PaymentsController {
       res.json({ success: true, message: 'Pagamento aprovado manualmente com sucesso' });
     } catch (error) { next(error); }
   }
+
+  async listGuardianRecharges(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await paymentsService.listGuardianRecharges(req.user!.schoolId);
+      res.json({ success: true, data: result });
+    } catch (error) { next(error); }
+  }
 }
 
 export const paymentsController = new PaymentsController();

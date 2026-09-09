@@ -1143,16 +1143,19 @@ export default function OnCreditPage() {
       // Search text
       if (!search.trim()) return true;
       const term = normalizeText(search);
-      const searchableText = normalizeText(`${d.student_name} ${d.grade} ${d.class_group} ${d.enrollment_number}`);
+      const searchableText = normalizeText(`${d.student_name} ${d.grade} ${d.enrollment_number}`);
 
       // Match exact compound term first (e.g. "4 ano" only matches "4 ano", not "2 ano")
       if (searchableText.includes(term)) return true;
 
-      // Fallback: token-based match, but only for meaningful tokens (3+ chars)
-      // This prevents single short tokens like "ano" from matching broadly
-      const tokens = term.split(/\s+/).filter(t => t.length >= 3);
+      // Fallback: token-based match with word boundaries
+      // "ano" must match a complete word, not a substring inside "manhã"
+      const tokens = term.split(/\s+/).filter(t => t.length >= 2);
       if (tokens.length === 0) return false;
-      return tokens.every(token => searchableText.includes(token));
+      return tokens.every(token => {
+        const regex = new RegExp(`(?:^|\\s)${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\s|$)`);
+        return regex.test(searchableText);
+      });
     });
 
     // Sort

@@ -46,7 +46,7 @@ router.post(
 
 router.post(
   '/recharge',
-  roleGuard('admin', 'guardian'),
+  roleGuard('admin'),
   validate(rechargeSchema),
   paymentsController.recharge.bind(paymentsController)
 );
@@ -63,6 +63,12 @@ router.post(
   '/transactions/:transactionId/approve',
   roleGuard('admin', 'operator'),
   paymentsController.approvePayment.bind(paymentsController)
+);
+
+router.get(
+  '/guardian-recharges',
+  roleGuard('admin'),
+  paymentsController.listGuardianRecharges.bind(paymentsController)
 );
 
 export { router as paymentsRoutes };

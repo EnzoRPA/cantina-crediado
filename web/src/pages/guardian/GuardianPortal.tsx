@@ -41,11 +41,7 @@ export default function GuardianPortal() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingTx, setLoadingTx] = useState(false);
-  const [showRechargeModal, setShowRechargeModal] = useState(false);
-  const [rechargeAmount, setRechargeAmount] = useState('');
-  const [selectedPreset, setSelectedPreset] = useState<number | null>(null);
   const [filterType, setFilterType] = useState('all');
-  const [pixData, setPixData] = useState<any>(null);
 
   // Link another child states
   const [showAddChildModal, setShowAddChildModal] = useState(false);
@@ -54,18 +50,12 @@ export default function GuardianPortal() {
   const [addChildLoading, setAddChildLoading] = useState(false);
   const [addChildError, setAddChildError] = useState('');
 
-  // Joint recharge splits states
-  const [isJointRecharge, setIsJointRecharge] = useState(false);
-  const [jointAmounts, setJointAmounts] = useState<Record<string, string>>({});
-
   // Daily limits state for parents
   const [dailyLimits, setDailyLimits] = useState<Record<string, { max: number | null; spent: number; remaining: number | null }>>({});
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [limitStudent, setLimitStudent] = useState<Student | null>(null);
   const [limitAmount, setLimitAmount] = useState('');
   const [savingLimit, setSavingLimit] = useState(false);
-
-  const presetAmounts = [10, 20, 30, 50, 75, 100];
 
   const selectedIdRef = useRef<string | null>(null);
 
@@ -208,48 +198,6 @@ export default function GuardianPortal() {
     if (rt) authApi.logout(rt);
     logout();
     navigate('/login');
-  };
-
-  const handleRecharge = async () => {
-    if (isJointRecharge) {
-      const splits = Object.entries(jointAmounts)
-        .map(([studentId, val]) => ({ studentId, amount: parseFloat(val) }))
-        .filter(s => s.amount > 0);
-
-      const total = splits.reduce((sum, s) => sum + s.amount, 0);
-      if (total <= 0) {
-        alert('Por favor, informe pelo menos um valor válido para recarga.');
-        return;
-      }
-
-      try {
-        const { data } = await api.post('/payments/recharge', {
-          studentId: selectedStudent?.id, // Fallback studentId for schema validation
-          amount: total,
-          paymentMethod: 'pix',
-          splits,
-        });
-        setPixData(data.data);
-      } catch (err: any) {
-        console.error('Erro na recarga conjunta:', err);
-        alert(err.response?.data?.error?.message || 'Erro ao gerar PIX para recarga conjunta.');
-      }
-    } else {
-      const amount = selectedPreset || parseFloat(rechargeAmount);
-      if (!amount || amount <= 0 || !selectedStudent) return;
-
-      try {
-        const { data } = await api.post('/payments/recharge', {
-          studentId: selectedStudent.id,
-          amount,
-          paymentMethod: 'pix'
-        });
-        setPixData(data.data);
-      } catch (err: any) {
-        console.error('Erro na recarga:', err);
-        alert(err.response?.data?.error?.message || 'Erro ao gerar PIX para recarga.');
-      }
-    }
   };
 
   const handleAddChild = async (e: FormEvent) => {
@@ -450,15 +398,11 @@ export default function GuardianPortal() {
                 </button>
               </div>
 
-            {/* Recharge */}
+            {/* Recarga DESATIVADA - responsáveis não podem mais adicionar crédito */}
             {selectedStudent?.id === student.id && (
-              <button
-                className="gp-recharge-btn"
-                onClick={(e) => { e.stopPropagation(); setIsJointRecharge(false); setShowRechargeModal(true); }}
-              >
-                <Wallet size={18} />
-                Fazer Recarga
-              </button>
+              <div style={{ marginTop: '0.75rem', padding: '0.6rem 1rem', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', fontSize: '0.82rem', color: '#f87171', textAlign: 'center' }}>
+                Recarga indisponível pelo portal. Acesse a cantina para recarregar.
+              </div>
             )}
           </div>
         ))}
