@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Printer, Camera, Volume2, Trash2, Plus, Download, Send, Search,
-  RefreshCw, Filter, ArrowUpDown, CheckSquare, Square
+  RefreshCw, Filter, ArrowUpDown, CheckSquare, Square, Mic
 } from 'lucide-react';
 import { api, posApi } from '../../services/api';
 import { QRCodeSVG } from '../../components/common/QRCodeSVG';
@@ -64,6 +64,213 @@ function parseMathExpression(expr: string): number {
 const formatCurrency = (val: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
+// === Voice Recognition Helpers ===
+
+const PT_NUMBER_WORDS: Record<string, number> = {
+  'um': 1, 'uma': 1, 'dois': 2, 'duas': 2, 'três': 3, 'tres': 3,
+  'quatro': 4, 'cinco': 5, 'seis': 6, 'sete': 7, 'oito': 8, 'nove': 9,
+  'dez': 10, 'onze': 11, 'doze': 12, 'treze': 13, 'quatorze': 14, 'catorze': 14,
+  'quinze': 15, 'dezesseis': 16, 'dezessete': 17,
+  'dezoito': 18, 'dezenove': 19,
+  'vinte': 20, 'trinta': 30, 'quarenta': 40, 'cinquenta': 50,
+  'sessenta': 60, 'setenta': 70, 'oitenta': 80, 'noventa': 90,
+  'cem': 100, 'cento': 100, 'duzentos': 200, 'trezentos': 300,
+  'quatrocentos': 400, 'quinhentos': 500, 'seiscentos': 600,
+  'setecentos': 700, 'oitocentos': 800, 'novecentos': 900,
+  'mil': 1000,
+};
+
+function parsePtNumber(text: string): number | null {
+  const words = text.toLowerCase().trim().split(/\s+/);
+  let total = 0;
+  let current = 0;
+  let foundAny = false;
+
+  for (const word of words) {
+    if (word === 'e' || word === 'e+') continue;
+    const val = PT_NUMBER_WORDS[word];
+    if (val !== undefined) {
+      foundAny = true;
+      if (val === 1000) {
+        total += (current || 1) * 1000;
+        current = 0;
+      } else if (val === 100) {
+        current += 100;
+      } else if (val >= 20) {
+        current += val;
+      } else {
+        current += val;
+      }
+    }
+  }
+  total += current;
+  return foundAny ? total : null;
+}
+
+function normalizeText(s: string): string {
+  return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+function similarityScore(input: string, target: string): number {
+  const a = normalizeText(input);
+  const b = normalizeText(target);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (b.includes(a)) return 0.95;
+  if (a.includes(b)) return 0.9;
+  if (b.startsWith(a)) return 0.92;
+  if (a.startsWith(b)) return 0.88;
+  const maxLen = Math.max(a.length, b.length);
+  const dist = levenshtein(a, b);
+  return Math.max(0, 1 - dist / maxLen);
+}
+
+function parseVoiceInput(transcript: string): { name: string; amount: string | null } {
+  let text = transcript.trim();
+  if (!text) return { name: '', amount: null };
+
+  text = text.replace(/\bR\$\s*/gi, '').replace(/\breais\b/gi, '').trim();
+
+  const plusFixed = text.replace(/\bmais\b/gi, '+').replace(/\bmenos\b/gi, '-');
+  const tokens = plusFixed.split(/\s+/);
+
+  let amountStr: string | null = null;
+  let nameTokens: string[] = [];
+
+  const joined = tokens.join(' ');
+  const mathMatch = joined.match(/(\d+(?:\.\d+)?(?:\s*[+\-]\s*\d+(?:\.\d+)?)*)\s*$/);
+  if (mathMatch) {
+    amountStr = mathMatch[1].replace(/\s/g, '');
+    const before = joined.slice(0, joined.lastIndexOf(mathMatch[1].trim())).trim();
+    nameTokens = before ? before.split(/\s+/) : [];
+  } else {
+    const lastToken = tokens[tokens.length - 1];
+    const numVal = PT_NUMBER_WORDS[lastToken?.toLowerCase()];
+    if (numVal !== undefined && tokens.length > 1) {
+      amountStr = String(numVal);
+      nameTokens = tokens.slice(0, -1);
+    } else {
+      const numParsed = parseFloat(lastToken);
+      if (!isNaN(numParsed) && numParsed > 0 && tokens.length > 1 && /^[\d.]+$/.test(lastToken)) {
+        amountStr = String(numParsed);
+        nameTokens = tokens.slice(0, -1);
+      } else {
+        const spokenNum = parsePtNumber(plusFixed);
+        if (spokenNum !== null && tokens.length > 1) {
+          amountStr = String(spokenNum);
+          nameTokens = tokens.slice(0, -1);
+        } else {
+          nameTokens = tokens;
+        }
+      }
+    }
+  }
+
+  const name = nameTokens.join(' ').trim();
+  return { name, amount: amountStr };
+}
+
+function findSimilarStudents(
+  spokenName: string,
+  students: StudentItem[],
+  limit = 5
+): Array<{ student: StudentItem; score: number }> {
+  if (!spokenName.trim()) return [];
+  const results: Array<{ student: StudentItem; score: number }> = [];
+  for (const s of students) {
+    const score = Math.max(
+      similarityScore(spokenName, s.student_name),
+      similarityScore(spokenName, `${s.student_name} ${s.grade || ''}`.trim()) * 0.9,
+      similarityScore(spokenName, s.enrollment_number || '') * 0.7
+    );
+    if (score > 0.3) {
+      results.push({ student: s, score });
+    }
+  }
+  results.sort((a, b) => b.score - a.score);
+  return results.slice(0, limit);
+}
+
+function useVoiceRecognition(options: {
+  lang?: string;
+  onResult?: (transcript: string) => void;
+  onError?: (error: string) => void;
+}) {
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  const isSupported = typeof window !== 'undefined' &&
+    ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+
+  const stop = useCallback(() => {
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (_) {}
+      recognitionRef.current = null;
+    }
+    setIsListening(false);
+  }, []);
+
+  const start = useCallback(() => {
+    if (!isSupported) return;
+    stop();
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.lang = options.lang || 'pt-BR';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognitionRef.current = recognition;
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results?.[0]?.[0]?.transcript || '';
+      if (transcript.trim()) {
+        options.onResult?.(transcript.trim());
+      }
+      stop();
+    };
+
+    recognition.onerror = (event: any) => {
+      if (event.error !== 'aborted') {
+        options.onError?.(event.error || 'Erro desconhecido');
+      }
+      stop();
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    try {
+      recognition.start();
+      setIsListening(true);
+    } catch (_) {
+      stop();
+    }
+  }, [isSupported, options.lang, options.onResult, options.onError, stop]);
+
+  useEffect(() => {
+    return () => stop();
+  }, [stop]);
+
+  return { isListening, isSupported, start, stop };
+}
+
 export default function FiadoScannerPage() {
   const [activeTab, setActiveTab] = useState<'impressao' | 'scanner'>('impressao');
   const [students, setStudents] = useState<StudentItem[]>([]);
@@ -83,6 +290,41 @@ export default function FiadoScannerPage() {
   const [scannedItems, setScannedItems] = useState<ScannedBatchItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [manualSearch, setManualSearch] = useState('');
+
+  // Voice Recognition State
+  const [voiceSuggestions, setVoiceSuggestions] = useState<{
+    spokenName: string;
+    amount: string | null;
+    suggestions: StudentItem[];
+  } | null>(null);
+
+  const handleVoiceResult = useCallback((transcript: string) => {
+    const { name, amount } = parseVoiceInput(transcript);
+    if (!name) {
+      showToast('Não consegui identificar um nome. Tente novamente.', 'error');
+      return;
+    }
+    const matches = findSimilarStudents(name, students, 5);
+    if (matches.length > 0 && matches[0].score >= 0.85) {
+      addStudentToBatch(matches[0].student, amount || '10');
+    } else if (matches.length > 0) {
+      setVoiceSuggestions({ spokenName: name, amount, suggestions: matches.map(m => m.student) });
+    } else {
+      showToast(`Nenhum aluno similar a "${name}" encontrado.`, 'error');
+    }
+  }, [students]);
+
+  const voice = useVoiceRecognition({
+    lang: 'pt-BR',
+    onResult: handleVoiceResult,
+    onError: (err) => {
+      if (err === 'not-allowed') {
+        showToast('Permissão de microfone negada. Habilite nas configurações do navegador.', 'error');
+      } else if (err !== 'no-speech') {
+        showToast('Erro ao reconhecer voz. Tente novamente.', 'error');
+      }
+    },
+  });
 
   const inputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
 
@@ -770,16 +1012,110 @@ export default function FiadoScannerPage() {
                 <label style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-main)', display: 'block', marginBottom: '0.5rem' }}>
                   ➕ Adicionar Aluno Manualmente (Sem QR Code)
                 </label>
-                <div style={{ position: 'relative' }}>
-                  <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Digite nome ou matrícula do aluno..."
-                    value={manualSearch}
-                    onChange={(e) => setManualSearch(e.target.value)}
-                    style={{ paddingLeft: '2.4rem', fontSize: '0.9rem' }}
-                  />
+
+                {/* Voice Suggestions Panel */}
+                {voiceSuggestions && (
+                  <div style={{
+                    background: '#fffbeb',
+                    border: '1px solid #fde68a',
+                    borderRadius: '10px',
+                    padding: '0.75rem 1rem',
+                    marginBottom: '0.75rem',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#92400e', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Mic size={15} /> 🎤 "{voiceSuggestions.spokenName}"
+                        {voiceSuggestions.amount && (
+                          <span style={{ background: '#fde68a', padding: '1px 6px', borderRadius: '4px', fontSize: '0.78rem' }}>
+                            — R$ {voiceSuggestions.amount}
+                          </span>
+                        )}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setVoiceSuggestions(null)}
+                        style={{ background: 'none', border: 'none', color: '#92400e', cursor: 'pointer', fontSize: '1rem', fontWeight: 700, padding: '0 4px' }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div style={{ fontSize: '0.8rem', color: '#a16207', marginBottom: '0.5rem' }}>
+                      Aluno não encontrado exatamente. Selecione o correto:
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {voiceSuggestions.suggestions.map((s) => (
+                        <button
+                          key={s.student_id}
+                          type="button"
+                          onClick={() => {
+                            addStudentToBatch(s, voiceSuggestions.amount || '10');
+                            setVoiceSuggestions(null);
+                          }}
+                          style={{
+                            background: '#ffffff',
+                            border: '1px solid #fbbf24',
+                            borderRadius: '8px',
+                            padding: '6px 12px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontSize: '0.82rem',
+                            fontWeight: 600,
+                            color: '#92400e',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.background = '#fef3c7'; e.currentTarget.style.borderColor = '#f59e0b'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = '#ffffff'; e.currentTarget.style.borderColor = '#fbbf24'; }}
+                        >
+                          <Plus size={14} color="#16a34a" />
+                          {s.student_name}
+                          {s.grade && <span style={{ fontSize: '0.72rem', color: '#a16207' }}>({s.grade})</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ position: 'relative', display: 'flex', gap: '0.5rem', alignItems: 'stretch' }}>
+                  <div style={{ position: 'relative', flex: 1 }}>
+                    <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="Digite nome ou matrícula do aluno..."
+                      value={manualSearch}
+                      onChange={(e) => setManualSearch(e.target.value)}
+                      style={{ paddingLeft: '2.4rem', fontSize: '0.9rem', width: '100%', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  {voice.isSupported && (
+                    <button
+                      type="button"
+                      onClick={voice.isListening ? voice.stop : voice.start}
+                      title={voice.isListening ? 'Parar gravação' : '🎤 Falar nome + valor (ex: "João Silva 15")'}
+                      style={{
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '10px',
+                        border: voice.isListening ? '2px solid #ef4444' : '2px solid #e2e8f0',
+                        background: voice.isListening
+                          ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
+                          : 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+                        color: voice.isListening ? '#ffffff' : '#64748b',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        transition: 'all 0.2s ease',
+                        boxShadow: voice.isListening ? '0 0 0 3px rgba(239, 68, 68, 0.25)' : 'none',
+                        animation: voice.isListening ? 'voice-pulse 1.5s ease-in-out infinite' : 'none',
+                      }}
+                    >
+                      <Mic size={18} />
+                    </button>
+                  )}
                 </div>
 
                 {filteredStudentsForManualAdd.length > 0 && (
