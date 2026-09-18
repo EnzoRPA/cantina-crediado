@@ -37,26 +37,19 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Cache-Control'],
 }));
 
-// Enable CORS for static files (images)
-app.use('/uploads', cors({
-  origin: config.cors.origins,
-  credentials: true,
-}));
-
 // ---- Parsing ----
 app.use(express.json({ limit: '10mb' })); // 10mb for facial images
 app.use(express.urlencoded({ extended: true }));
 app.use(compression());
 
-// ---- Static Files ----
-const uploadsPath = path.join(__dirname, '..', 'uploads');
-app.use('/uploads', (req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
-  next();
-}, express.static(uploadsPath));
+// ---- Static Files (only in non-serverless environments) ----
+if (!process.env.VERCEL) {
+  const uploadsPath = path.join(__dirname, '..', 'uploads');
+  if (fs.existsSync(uploadsPath)) {
+    app.use('/uploads', cors({ origin: config.cors.origins, credentials: true }));
+    app.use('/uploads', express.static(uploadsPath));
+  }
+}
 
 // ---- Health Check (Exempt from rate limiting for 5s keep-alive) ----
 const handleHealth = (_req: express.Request, res: express.Response) => {
@@ -98,19 +91,21 @@ app.use('/api/payments', paymentsRoutes);
 app.use('/api/facial', facialRoutes);
 app.use('/api/menu', menuRoutes);
 
-// ---- Static Web Frontend (if compiled) ----
-const webDistPath = path.join(__dirname, '../../web/dist');
-if (fs.existsSync(webDistPath)) {
-  app.use(express.static(webDistPath));
-  app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/')) return next();
-    res.sendFile(path.join(webDistPath, 'index.html'));
-  });
+// ---- Static Web Frontend (only in non-serverless environments) ----
+if (!process.env.VERCEL) {
+  const webDistPath = path.join(__dirname, '../../web/dist');
+  if (fs.existsSync(webDistPath)) {
+    app.use(express.static(webDistPath));
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api/')) return next();
+      res.sendFile(path.join(webDistPath, 'index.html'));
+    });
+  }
 }
 
 // ---- 404 Handler ----
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/')) {
+  if (req.path.startsWith('/api/')) {
     res.status(404).json({
       success: false,
       error: {
